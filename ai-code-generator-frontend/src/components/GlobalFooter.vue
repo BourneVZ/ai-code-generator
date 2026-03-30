@@ -1,5 +1,5 @@
 <template>
-  <div class="global-footer">AI编程项目 by 程序员BVZ</div>
+  <div class="global-footer">AI编程项目 by BVZ</div>
 </template>
 
 <style scoped>
