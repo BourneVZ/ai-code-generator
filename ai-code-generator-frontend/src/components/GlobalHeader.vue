@@ -1,111 +1,157 @@
+<template>
+  <a-layout-header class="header">
+    <a-row :wrap="false">
+      <!-- 左侧：Logo和标题 -->
+      <a-col flex="200px">
+        <RouterLink to="/">
+          <div class="header-left">
+            <img class="logo" src="@/assets/logo.png" alt="Logo" />
+            <h1 class="site-title">AI应用生成</h1>
+          </div>
+        </RouterLink>
+      </a-col>
+      <!-- 中间：导航菜单 -->
+      <a-col flex="auto">
+        <a-menu
+          v-model:selectedKeys="selectedKeys"
+          mode="horizontal"
+          :items="menuItems"
+          @click="handleMenuClick"
+        />
+      </a-col>
+      <!-- 右侧：用户操作区域 -->
+      <a-col>
+        <div class="user-login-status">
+          <div v-if="loginUserStore.loginUser.id">
+            <a-dropdown>
+              <a-space>
+                <a-avatar :src="loginUserStore.loginUser.userAvatar" />
+                {{ loginUserStore.loginUser.userName ?? '无名' }}
+              </a-space>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item @click="doLogout">
+                    <LogoutOutlined />
+                    退出登录
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
+          <div v-else>
+            <a-button type="primary" href="/user/login">登录</a-button>
+          </div>
+        </div>
+      </a-col>
+    </a-row>
+  </a-layout-header>
+</template>
+
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, h, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useLoginUserStore } from '@/stores/loginUser.ts'
+import { LogoutOutlined } from '@ant-design/icons-vue'
+import { userLogout } from '@/api/userController.ts'
+import { type MenuProps, message } from 'ant-design-vue'
+// JS 中引入 Store
 
-import { globalMenuItems } from '@/config/menu'
+// 获取登录用户状态
+const loginUserStore = useLoginUserStore()
 
-const route = useRoute()
 const router = useRouter()
-
-const selectedKeys = computed(() => {
-  const currentItem = globalMenuItems.find((item) => route.path === item.path)
-  return currentItem ? [currentItem.key] : []
+// 当前选中菜单
+const selectedKeys = ref<string[]>(['/'])
+// 监听路由变化，更新当前选中菜单
+router.afterEach((to, from, next) => {
+  selectedKeys.value = [to.path]
 })
 
-const handleMenuClick = ({ key }: { key: string }) => {
-  const target = globalMenuItems.find((item) => item.key === key)
-  if (target && target.path !== route.path) {
-    router.push(target.path)
+// 菜单配置项
+const originItems = [
+  {
+    key: '/',
+    label: '主页',
+    title: '主页',
+  },
+  {
+    key: '/admin/userManage',
+    label: '用户管理',
+    title: '用户管理',
+  },
+  {
+    key: 'others',
+    label: h('a', { href: 'https://github.com/BourneVZ', target: '_blank' }, '关于我们'),
+    title: 'Github',
+  },
+]
+
+// 过滤菜单项
+const filterMenus = (menus = [] as MenuProps['items']) => {
+  return menus?.filter((menu) => {
+    const menuKey = menu?.key as string
+    if (menuKey?.startsWith('/admin')) {
+      const loginUser = loginUserStore.loginUser
+      if (!loginUser || loginUser.userRole !== 'admin') {
+        return false
+      }
+    }
+    return true
+  })
+}
+
+// 展示在菜单的路由数组
+const menuItems = computed<MenuProps['items']>(() => filterMenus(originItems))
+
+// 处理菜单点击
+const handleMenuClick: MenuProps['onClick'] = (e) => {
+  const key = e.key as string
+  selectedKeys.value = [key]
+  // 跳转到对应页面
+  if (key.startsWith('/')) {
+    router.push(key)
+  }
+}
+
+// 用户注销
+const doLogout = async () => {
+  const res = await userLogout()
+  if (res.data.code === 0) {
+    loginUserStore.setLoginUser({
+      userName: '未登录',
+    })
+    message.success('退出登录成功')
+    await router.push('/user/login')
+  } else {
+    message.error('退出登录失败，' + res.data.message)
   }
 }
 </script>
 
-<template>
-  <div class="global-header">
-    <RouterLink class="brand" to="/">
-      <img alt="网站 logo" class="brand__logo" src="@/assets/logo.png" />
-      <span class="brand__title">AI 编程项目</span>
-    </RouterLink>
-
-    <a-menu
-      mode="horizontal"
-      :items="globalMenuItems"
-      :selected-keys="selectedKeys"
-      class="global-header__menu"
-      @click="handleMenuClick"
-    />
-
-    <div class="global-header__action">
-      <a-button type="primary">登录</a-button>
-    </div>
-  </div>
-</template>
-
 <style scoped>
-.global-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  width: 100%;
-  min-height: 64px;
+.header {
+  background: #fff;
+  padding: 0 24px;
 }
 
-.brand {
-  display: inline-flex;
+.header-left {
+  display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 0;
 }
 
-.brand__logo {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.18);
+.logo {
+  height: 48px;
+  width: 48px;
 }
 
-.brand__title {
-  color: #0f172a;
-  font-size: 20px;
-  font-weight: 700;
-  white-space: nowrap;
+.site-title {
+  margin: 0;
+  font-size: 18px;
+  color: #1890ff;
 }
 
-.global-header__menu {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border-bottom: none;
-}
-
-.global-header__action {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-:deep(.ant-menu-overflow) {
-  justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .global-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 0;
-  }
-
-  .brand,
-  .global-header__action {
-    width: 100%;
-    justify-content: center;
-  }
-
-  :deep(.ant-menu-overflow) {
-    justify-content: center;
-  }
+.ant-menu-horizontal {
+  border-bottom: none !important;
 }
 </style>
