@@ -6,7 +6,7 @@ import cn.hutool.core.util.StrUtil;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.mapper.UserMapper;
-import com.bvz.aicodegenerator.model.dto.UserQueryRequest;
+import com.bvz.aicodegenerator.model.dto.user.UserQueryRequest;
 import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.model.enums.UserRoleEnum;
 import com.bvz.aicodegenerator.model.vo.LoginUserVO;

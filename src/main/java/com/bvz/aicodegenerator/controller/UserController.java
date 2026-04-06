@@ -9,7 +9,7 @@ import com.bvz.aicodegenerator.constant.UserConstant;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.exception.ThrowUtils;
-import com.bvz.aicodegenerator.model.dto.*;
+import com.bvz.aicodegenerator.model.dto.user.*;
 import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.model.vo.LoginUserVO;
 import com.bvz.aicodegenerator.model.vo.UserVO;

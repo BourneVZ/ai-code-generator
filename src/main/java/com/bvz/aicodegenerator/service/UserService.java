@@ -1,6 +1,6 @@
 package com.bvz.aicodegenerator.service;
 
-import com.bvz.aicodegenerator.model.dto.UserQueryRequest;
+import com.bvz.aicodegenerator.model.dto.user.UserQueryRequest;
 import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.model.vo.LoginUserVO;
 import com.bvz.aicodegenerator.model.vo.UserVO;

@@ -1,4 +1,4 @@
-package com.bvz.aicodegenerator.model.dto;
+package com.bvz.aicodegenerator.model.dto.user;
 
 import com.bvz.aicodegenerator.common.PageRequest;
 import lombok.Data;
