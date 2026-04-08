@@ -18,19 +18,19 @@ class AiCodeGeneratorFacadeTest {
 
     @Test
     void generateAndSaveHTMLCode() {
-        File file = aiCodeGeneratorFacade.generateAndSaveCode("做个简单的工作记录小工具，这只是一次连通性测试，总共不超过20行代码", CodeGenTypeEnum.HTML);
+        File file = aiCodeGeneratorFacade.generateAndSaveCode("做个简单的记账页面，总共不超过20行代码", CodeGenTypeEnum.HTML, 1L);
         Assertions.assertNotNull(file);
     }
 
     @Test
     void generateAndSaveMultiFileCode() {
-        File file = aiCodeGeneratorFacade.generateAndSaveCode("做个简单的工作记录小工具，这只是一次连通性测试，总共不超过20行代码", CodeGenTypeEnum.MULTI_FILE);
+        File file = aiCodeGeneratorFacade.generateAndSaveCode("做个简单的日历页面，总共不超过20行代码", CodeGenTypeEnum.MULTI_FILE, 2L);
         Assertions.assertNotNull(file);
     }
 
     @Test
     void generateAndSaveHTMLCodeStream() {
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream("做个简单的登录页面，总共不超过20行代码", CodeGenTypeEnum.HTML);
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream("做个简单的个人博客页面，总共不超过20行代码", CodeGenTypeEnum.HTML, 3L);
         // 阻塞等待所有数据收集完成
         List<String> result = codeStream.collectList().block();
         // 验证结果
@@ -42,7 +42,7 @@ class AiCodeGeneratorFacadeTest {
 
     @Test
     void generateAndSaveMultiFileCodeStream() {
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream("做个简单的登录页面，总共不超过20行代码", CodeGenTypeEnum.MULTI_FILE);
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream("做个简单的备忘录页面，总共不超过20行代码", CodeGenTypeEnum.MULTI_FILE, 4L);
         // 阻塞等待所有数据收集完成
         List<String> result = codeStream.collectList().block();
         // 验证结果

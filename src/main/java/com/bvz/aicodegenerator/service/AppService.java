@@ -2,9 +2,11 @@ package com.bvz.aicodegenerator.service;
 
 import com.bvz.aicodegenerator.model.dto.app.AppQueryRequest;
 import com.bvz.aicodegenerator.model.entity.App;
+import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -14,6 +16,24 @@ import java.util.List;
  * @author <a href="https://github.com/BourneVZ">BVZ</a>
  */
 public interface AppService extends IService<App> {
+    /**
+     * 通过对话生成应用代码
+     *
+     * @param appId     应用ID
+     * @param message   提示词
+     * @param loginUser 登录用户
+     * @return
+     */
+    Flux<String> chatToGenCode(Long appId, String message, User loginUser);
+
+    /**
+     * 应用部署
+     *
+     * @param appId     应用ID
+     * @param loginUser 登录用户
+     * @return
+     */
+    String deployApp(Long appId, User loginUser);
 
     /**
      * 校验应用参数
@@ -46,4 +66,6 @@ public interface AppService extends IService<App> {
      * @return 应用VO列表
      */
     List<AppVO> getAppVOList(List<App> appList);
+
+
 }
