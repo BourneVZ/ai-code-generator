@@ -45,7 +45,7 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { deleteUser, listUserVoByPage } from '@/api/userController.ts'
+import { deleteUserByAdmin, listUserVoByPageByAdmin } from '@/api/userController.ts'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 const columns = [
@@ -95,7 +95,7 @@ const searchParams = reactive<API.UserQueryRequest>({
 
 // 获取数据
 const fetchData = async () => {
-  const res = await listUserVoByPage({
+  const res = await listUserVoByPageByAdmin({
     ...searchParams,
   })
   if (res.data.data) {
@@ -132,11 +132,11 @@ const doSearch = () => {
 }
 
 // 删除数据
-const doDelete = async (id: string) => {
-  if (!id) {
+const doDelete = async (id?: number) => {
+  if (id == null) {
     return
   }
-  const res = await deleteUser({ id })
+  const res = await deleteUserByAdmin({ id })
   if (res.data.code === 0) {
     message.success('删除成功')
     // 刷新数据
