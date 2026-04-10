@@ -1,8 +1,9 @@
 :root {
   color: #1f2937;
   background:
-    radial-gradient(circle at top, rgba(22, 119, 255, 0.1), transparent 32%),
-    linear-gradient(180deg, #f5f7fb 0%, #eef3f9 100%);
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.16), transparent 28%),
+    radial-gradient(circle at right top, rgba(96, 165, 250, 0.18), transparent 26%),
+    linear-gradient(180deg, #f8fbff 0%, #eef6fb 54%, #eff7ff 100%);
   font-family:
     'Segoe UI',
     'PingFang SC',
@@ -24,8 +25,24 @@ body,
   margin: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   min-width: 320px;
+  color: #1f2937;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: '';
+  background:
+    radial-gradient(circle at 15% 20%, rgba(125, 211, 252, 0.18), transparent 22%),
+    radial-gradient(circle at 85% 82%, rgba(110, 231, 183, 0.14), transparent 24%);
 }
 
 a {

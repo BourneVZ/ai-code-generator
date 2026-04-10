@@ -1,7 +1,9 @@
 export interface MenuItemConfig {
   key: string
   label: string
-  path: string
+  path?: string
+  external?: string
+  requiresAdmin?: boolean
 }
 
 export const globalMenuItems: MenuItemConfig[] = [
@@ -11,8 +13,15 @@ export const globalMenuItems: MenuItemConfig[] = [
     path: '/',
   },
   {
-    key: 'about',
-    label: '关于我们',
-    path: '/about',
+    key: 'appManage',
+    label: '应用管理',
+    path: '/admin/appManage',
+    requiresAdmin: true,
+  },
+  {
+    key: 'userManage',
+    label: '用户管理',
+    path: '/admin/userManage',
+    requiresAdmin: true,
   },
 ]

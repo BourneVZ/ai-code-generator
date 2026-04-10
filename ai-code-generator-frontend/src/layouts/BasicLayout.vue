@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalHeader from '@/components/GlobalHeader.vue'
+
+const route = useRoute()
+
+const immersive = computed(() => Boolean(route.meta.immersive))
+const hideFooter = computed(() => Boolean(route.meta.hideFooter))
 </script>
 
 <template>
@@ -11,13 +17,13 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
       <GlobalHeader />
     </a-layout-header>
 
-    <a-layout-content class="basic-layout__content">
-      <div class="basic-layout__content-inner">
+    <a-layout-content class="basic-layout__content" :class="{ 'is-immersive': immersive }">
+      <div class="basic-layout__content-inner" :class="{ 'is-immersive': immersive }">
         <RouterView />
       </div>
     </a-layout-content>
 
-    <a-layout-footer class="basic-layout__footer">
+    <a-layout-footer v-if="!hideFooter" class="basic-layout__footer">
       <GlobalFooter />
     </a-layout-footer>
   </a-layout>
@@ -32,12 +38,12 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
 .basic-layout__header {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 100;
   height: auto;
   padding: 0 24px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .basic-layout__content {
@@ -46,19 +52,21 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
   padding: 24px;
 }
 
+.basic-layout__content.is-immersive {
+  padding-top: 18px;
+}
+
 .basic-layout__content-inner {
   width: 100%;
-  max-width: 1200px;
-  min-height: calc(100vh - 64px - 73px);
-  padding: 24px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+  max-width: 1280px;
+  min-height: calc(100vh - 72px - 61px);
+}
+
+.basic-layout__content-inner.is-immersive {
+  max-width: 1440px;
 }
 
 .basic-layout__footer {
-  margin-top: auto;
   padding: 20px 16px 28px;
   background: transparent;
 }
@@ -70,12 +78,6 @@ import GlobalHeader from '@/components/GlobalHeader.vue'
 
   .basic-layout__content {
     padding: 16px;
-  }
-
-  .basic-layout__content-inner {
-    min-height: calc(100vh - 64px - 90px);
-    padding: 16px;
-    border-radius: 18px;
   }
 }
 </style>

@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import BasicLayout from './layouts/BasicLayout.vue'
+import { onMounted } from 'vue'
 
-import { healthCheck } from '@/api/healthController.ts'
-import { useLoginUserStore } from '@/stores/loginUser.ts'
+import BasicLayout from '@/layouts/BasicLayout.vue'
+import { useLoginUserStore } from '@/stores/loginUser'
 
 const loginUserStore = useLoginUserStore()
-loginUserStore.fetchLoginUser()
 
-healthCheck().then((res) => {
-  console.log(res)
+onMounted(() => {
+  loginUserStore.fetchLoginUser()
 })
 </script>
 
