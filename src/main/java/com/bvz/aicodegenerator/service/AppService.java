@@ -16,24 +16,33 @@ import java.util.List;
  * @author <a href="https://github.com/BourneVZ">BVZ</a>
  */
 public interface AppService extends IService<App> {
+
     /**
      * 通过对话生成应用代码
      *
-     * @param appId     应用ID
+     * @param appId     应用 ID
      * @param message   提示词
      * @param loginUser 登录用户
-     * @return
+     * @return 流式结果
      */
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
 
     /**
      * 应用部署
      *
-     * @param appId     应用ID
+     * @param appId     应用 ID
      * @param loginUser 登录用户
-     * @return
+     * @return 部署地址
      */
     String deployApp(Long appId, User loginUser);
+
+    /**
+     * 删除应用及其关联的聊天记录
+     *
+     * @param appId 应用 ID
+     * @return 删除结果
+     */
+    boolean removeById(Long appId);
 
     /**
      * 校验应用参数
@@ -55,7 +64,7 @@ public interface AppService extends IService<App> {
      * 获取应用封装类
      *
      * @param app 应用
-     * @return 应用VO
+     * @return 应用 VO
      */
     AppVO getAppVO(App app);
 
@@ -63,9 +72,7 @@ public interface AppService extends IService<App> {
      * 获取应用列表封装类
      *
      * @param appList 应用列表
-     * @return 应用VO列表
+     * @return 应用 VO 列表
      */
     List<AppVO> getAppVOList(List<App> appList);
-
-
 }

@@ -18,10 +18,12 @@ import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
 import com.bvz.aicodegenerator.model.vo.AppVO;
 import com.bvz.aicodegenerator.model.vo.UserVO;
 import com.bvz.aicodegenerator.service.AppService;
+import com.bvz.aicodegenerator.service.ChatHistoryService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
@@ -30,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -39,10 +42,15 @@ import java.util.stream.Collectors;
  */
 @Service
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
+
     @Resource
     private UserServiceImpl userService;
+
     @Resource
     private AiCodeGeneratorFacade aiCodeGeneratorFacade;
+
+    @Resource
+    private ChatHistoryService chatHistoryService;
 
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
@@ -50,17 +58,33 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
+
         // 2. 查询应用信息
         App app = this.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
-        // 3. 验证用户是否有权限访问该应用，仅本人可以生成代码
+
+        // 3. 验证用户是否有权限访问该应用，仅本人可以继续对话生成代码
         ThrowUtils.throwIf(!app.getUserId().equals(loginUser.getId()), ErrorCode.NO_AUTH_ERROR, "无权限访问该应用");
+
         // 4. 获取应用的代码生成类型
         String codeGenTypeStr = app.getCodeGenType();
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenTypeStr);
         ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
-        // 5. 调用 AI 生成代码
-        return aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+
+        // 5. 先保存用户消息，再开始调用 AI，确保对话过程完整可追溯
+        chatHistoryService.saveUserMessage(appId, loginUser.getId(), message);
+
+        // 6. 流式接收 AI 内容，等流结束后统一保存一条 AI 消息
+        StringBuilder aiReplyBuilder = new StringBuilder();
+        AtomicBoolean aiMessageSaved = new AtomicBoolean(false);
+        return aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId)
+                .doOnNext(aiReplyBuilder::append)
+                .doOnComplete(() -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
+                        aiReplyBuilder.toString(), null))
+                .doOnError(throwable -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
+                        aiReplyBuilder.toString(), throwable))
+                .doOnCancel(() -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
+                        aiReplyBuilder.toString(), new RuntimeException("AI 响应已取消")));
     }
 
     @Override
@@ -68,35 +92,41 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
+
         // 2. 查询应用信息
         App app = this.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+
         // 3. 验证用户是否有权限部署该应用，仅本人可以部署
         if (!app.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限部署该应用");
         }
-        // 4. 检查是否已有 deployKey
+
+        // 4. 检查是否已有 deployKey，没有则生成 6 位随机标识
         String deployKey = app.getDeployKey();
-        // 没有则生成 6 位 deployKey（大小写字母 + 数字）
         if (StrUtil.isBlank(deployKey)) {
             deployKey = RandomUtil.randomString(6);
         }
+
         // 5. 获取代码生成类型，构建源目录路径
         String codeGenType = app.getCodeGenType();
         String sourceDirName = codeGenType + "_" + appId;
         String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+
         // 6. 检查源目录是否存在
         File sourceDir = new File(sourceDirPath);
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码不存在，请先生成代码");
         }
+
         // 7. 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
         try {
             FileUtil.copyContent(sourceDir, new File(deployDirPath), true);
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败：" + e.getMessage());
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败，" + e.getMessage());
         }
+
         // 8. 更新应用的 deployKey 和部署时间
         App updateApp = new App();
         updateApp.setId(appId);
@@ -104,8 +134,18 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         updateApp.setDeployedTime(LocalDateTime.now());
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
+
         // 9. 返回可访问的 URL
         return String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean removeById(Long appId) {
+        // 删除应用时，先清理关联的聊天记录，避免留下冗余数据
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 无效");
+        chatHistoryService.removeByAppId(appId);
+        return this.removeById(appId);
     }
 
     @Override
@@ -164,6 +204,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
         AppVO appVO = new AppVO();
         BeanUtil.copyProperties(app, appVO);
+
         // 关联查询用户信息
         Long userId = app.getUserId();
         if (userId != null) {
@@ -179,6 +220,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (CollUtil.isEmpty(appList)) {
             return new ArrayList<>();
         }
+
         // 批量获取用户信息，避免 N+1 查询问题
         Set<Long> userIds = appList.stream()
                 .map(App::getUserId)
@@ -193,5 +235,28 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }).collect(Collectors.toList());
     }
 
-
+    /**
+     * 记录 AI 成功 / 失败消息，避免 doOnComplete、doOnError、doOnCancel 重复写入
+     */
+    private void saveAiReplyOnce(
+            AtomicBoolean aiMessageSaved,
+            Long appId,
+            Long userId,
+            String aiReply,
+            Throwable throwable
+    ) {
+        if (!aiMessageSaved.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            if (throwable == null) {
+                chatHistoryService.saveAiMessage(appId, userId, aiReply);
+                return;
+            }
+            String errorMessage = StrUtil.blankToDefault(throwable.getMessage(), "AI 回复失败");
+            chatHistoryService.saveAiErrorMessage(appId, userId, aiReply, errorMessage);
+        } catch (Exception ignored) {
+            // 聊天记录落库失败不应影响主流程的异常抛出
+        }
+    }
 }
