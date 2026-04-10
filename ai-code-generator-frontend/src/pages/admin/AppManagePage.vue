@@ -3,13 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 
-import {
-  deleteAppByAdmin,
-  listAppVoByPageByAdmin,
-  updateAppByAdmin,
-} from '@/api/appController'
+import { deleteAppByAdmin, listAppVoByPageByAdmin, updateAppByAdmin } from '@/api/appController'
 import { FEATURED_PRIORITY } from '@/constants/app'
-import { formatDateTime, getCodeGenTypeLabel, sanitizeAppQueryRequest } from '@/utils/app'
+import { asApiLong, formatDateTime, getCodeGenTypeLabel, sanitizeAppQueryRequest } from '@/utils/app'
 
 const router = useRouter()
 
@@ -30,15 +26,15 @@ const searchParams = reactive<API.AppQueryRequest>({
 })
 
 const columns = [
-  { title: 'ID', dataIndex: 'id', width: 90 },
-  { title: '应用名称', dataIndex: 'appName', width: 220 },
-  { title: '类型', dataIndex: 'codeGenType', width: 120 },
-  { title: '封面', dataIndex: 'cover', width: 120 },
-  { title: '优先级', dataIndex: 'priority', width: 100 },
-  { title: '创建者', dataIndex: 'user', width: 140 },
-  { title: '部署标识', dataIndex: 'deployKey', width: 180 },
-  { title: '创建时间', dataIndex: 'createTime', width: 190 },
-  { title: '操作', key: 'action', fixed: 'right', width: 250 },
+  { title: 'ID', dataIndex: 'id', width: 130, ellipsis: true },
+  { title: '应用名称', dataIndex: 'appName', width: 180, ellipsis: true },
+  { title: '类型', dataIndex: 'codeGenType', width: 92 },
+  { title: '封面', dataIndex: 'cover', width: 88 },
+  { title: '优先级', dataIndex: 'priority', width: 78 },
+  { title: '创建者', dataIndex: 'user', width: 120, ellipsis: true },
+  { title: '部署标识', dataIndex: 'deployKey', width: 120, ellipsis: true },
+  { title: '创建时间', dataIndex: 'createTime', width: 168 },
+  { title: '操作', key: 'action', width: 220 },
 ]
 
 const pagination = computed(() => ({
@@ -48,6 +44,8 @@ const pagination = computed(() => ({
   showSizeChanger: true,
   showTotal: (value: number) => `共 ${value} 条`,
 }))
+
+const isFeatured = (record: API.AppVO) => (record.priority ?? 0) >= FEATURED_PRIORITY
 
 async function fetchData() {
   loading.value = true
@@ -83,10 +81,11 @@ function resetSearch() {
 }
 
 async function doDelete(id?: string | number) {
-  if (!id) {
+  const apiId = asApiLong(id)
+  if (apiId === undefined) {
     return
   }
-  const response = await deleteAppByAdmin({ id: id as unknown as number })
+  const response = await deleteAppByAdmin({ id: apiId })
   if (response.data.code === 0) {
     message.success('应用已删除')
     fetchData()
@@ -95,22 +94,26 @@ async function doDelete(id?: string | number) {
   message.error(response.data.message || '删除失败')
 }
 
-async function setFeatured(record: API.AppVO) {
-  if (!record.id) {
+async function toggleFeatured(record: API.AppVO) {
+  const id = asApiLong(record.id)
+  if (id === undefined) {
     return
   }
+
+  const nextFeatured = !isFeatured(record)
   const response = await updateAppByAdmin({
-    id: record.id as unknown as number,
+    id,
     appName: record.appName,
     cover: record.cover,
-    priority: FEATURED_PRIORITY,
+    priority: nextFeatured ? FEATURED_PRIORITY : 0,
   })
+
   if (response.data.code === 0) {
-    message.success('已设为精选')
+    message.success(nextFeatured ? '已设为精选' : '已取消精选')
     fetchData()
     return
   }
-  message.error(response.data.message || '设置精选失败')
+  message.error(response.data.message || (nextFeatured ? '设置精选失败' : '取消精选失败'))
 }
 
 function handleTableChange(page: { current: number; pageSize: number }) {
@@ -129,7 +132,7 @@ onMounted(() => {
     <section class="manage-page__toolbar">
       <div>
         <h1 class="manage-page__title">应用管理</h1>
-        <p class="manage-page__subtitle">管理员可以查询、编辑、删除任意应用，并将应用设为精选。</p>
+        <p class="manage-page__subtitle">管理员可以查询、编辑、删除任意应用，并切换精选状态。</p>
       </div>
 
       <a-form layout="vertical" class="manage-page__form">
@@ -149,7 +152,7 @@ onMounted(() => {
             />
           </a-form-item>
           <a-form-item label="创建者 ID">
-            <a-input-number v-model:value="searchParams.userId" style="width: 100%" :min="1" />
+            <a-input v-model:value="searchParams.userId" placeholder="输入创建者 ID" allow-clear />
           </a-form-item>
           <a-form-item label="优先级">
             <a-input-number v-model:value="searchParams.priority" style="width: 100%" :min="0" />
@@ -179,7 +182,7 @@ onMounted(() => {
         :data-source="data"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1400 }"
+        table-layout="fixed"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
@@ -200,7 +203,9 @@ onMounted(() => {
             <div class="manage-page__table-actions">
               <a-button type="link" @click="router.push(`/app/chat/${record.id}`)">查看</a-button>
               <a-button type="link" @click="router.push(`/app/edit/${record.id}`)">编辑</a-button>
-              <a-button type="link" @click="setFeatured(record)">精选</a-button>
+              <a-button type="link" @click="toggleFeatured(record)">
+                {{ isFeatured(record) ? '取消精选' : '设为精选' }}
+              </a-button>
               <a-popconfirm
                 title="确认删除这个应用吗？"
                 ok-text="删除"
@@ -263,8 +268,14 @@ onMounted(() => {
 }
 
 .manage-page__table-actions {
-  display: flex;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 2px 14px;
+  align-items: start;
+}
+
+.manage-page__table-actions :deep(.ant-btn) {
+  padding-inline: 0;
 }
 
 @media (max-width: 960px) {

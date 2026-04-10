@@ -51,11 +51,7 @@ const handleSubmit = async (values: API.UserRegisterRequest) => {
             { min: 8, message: '密码不能少于 8 位' },
           ]"
         >
-          <a-input-password
-            v-model:value="formState.userPassword"
-            placeholder="请输入密码"
-            size="large"
-          />
+          <a-input-password v-model:value="formState.userPassword" placeholder="请输入密码" size="large" />
         </a-form-item>
 
         <a-form-item
@@ -67,11 +63,7 @@ const handleSubmit = async (values: API.UserRegisterRequest) => {
             { validator: validateCheckPassword },
           ]"
         >
-          <a-input-password
-            v-model:value="formState.checkPassword"
-            placeholder="请再次输入密码"
-            size="large"
-          />
+          <a-input-password v-model:value="formState.checkPassword" placeholder="请再次输入密码" size="large" />
         </a-form-item>
 
         <div class="auth-card__tips">

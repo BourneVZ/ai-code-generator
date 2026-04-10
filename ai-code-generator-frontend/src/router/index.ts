@@ -18,6 +18,9 @@ const router = createRouter({
       path: '/',
       name: '首页',
       component: HomePage,
+      meta: {
+        fullWidth: true,
+      },
     },
     {
       path: '/app/chat/:id',

@@ -5,20 +5,20 @@ import { message } from 'ant-design-vue'
 
 import { getAppVoById, getAppVoByIdByAdmin, updateApp, updateAppByAdmin } from '@/api/appController'
 import { useLoginUserStore } from '@/stores/loginUser'
-import { canOperateApp, formatDateTime, getAppName, isAdmin } from '@/utils/app'
+import { asApiLong, canOperateApp, formatDateTime, getAppName, isAdmin } from '@/utils/app'
 
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
 
 const appId = computed(() => String(route.params.id ?? ''))
-const appIdForApi = computed(() => appId.value as unknown as number)
+const appIdForApi = computed(() => asApiLong(appId.value))
 const loading = ref(true)
 const submitting = ref(false)
 const app = ref<API.AppVO>()
 
 const formState = reactive<API.AppAdminUpdateRequest>({
-  id: appIdForApi.value,
+  id: undefined,
   appName: '',
   cover: '',
   priority: 0,
@@ -28,15 +28,19 @@ const adminMode = computed(() => isAdmin(loginUserStore.loginUser))
 const canEditCurrentApp = computed(() => canOperateApp(loginUserStore.loginUser, app.value))
 
 async function fetchAppDetail() {
+  const id = appIdForApi.value
+  if (id === undefined) {
+    message.error('应用 ID 无效')
+    return
+  }
+
   loading.value = true
   try {
-    const response = adminMode.value
-      ? await getAppVoByIdByAdmin({ id: appIdForApi.value })
-      : await getAppVoById({ id: appIdForApi.value })
+    const response = adminMode.value ? await getAppVoByIdByAdmin({ id }) : await getAppVoById({ id })
 
     if (response.data.code === 0 && response.data.data) {
       app.value = response.data.data
-      formState.id = response.data.data.id
+      formState.id = asApiLong(response.data.data.id)
       formState.appName = response.data.data.appName || ''
       formState.cover = response.data.data.cover || ''
       formState.priority = response.data.data.priority ?? 0
@@ -94,7 +98,7 @@ onMounted(() => {
     <div class="app-edit-page__header">
       <div>
         <h1 class="app-edit-page__title">编辑应用信息</h1>
-        <p class="app-edit-page__subtitle">普通用户仅可修改自己的应用名称，管理员可额外维护封面与优先级。</p>
+        <p class="app-edit-page__subtitle">普通用户可修改应用名称，管理员还可维护封面与优先级。</p>
       </div>
       <div class="app-edit-page__header-actions">
         <a-button @click="router.push(`/app/chat/${appId}`)">返回详情</a-button>
@@ -111,10 +115,7 @@ onMounted(() => {
             </a-form-item>
 
             <a-form-item v-if="adminMode" label="应用封面">
-              <a-input
-                v-model:value="formState.cover"
-                placeholder="请输入封面图片地址，可为空"
-              />
+              <a-input v-model:value="formState.cover" placeholder="请输入封面图片地址，可为空" />
             </a-form-item>
 
             <a-form-item v-if="adminMode" label="优先级">

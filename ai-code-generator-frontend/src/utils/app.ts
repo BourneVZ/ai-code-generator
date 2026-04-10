@@ -24,6 +24,13 @@ export function normalizeId(id?: SafeId | null) {
   return String(id)
 }
 
+export function asApiLong(id?: SafeId | null) {
+  if (id === undefined || id === null || id === '') {
+    return undefined
+  }
+  return id as unknown as number
+}
+
 export function hasValidId(id?: SafeId | null) {
   return normalizeId(id) !== ''
 }

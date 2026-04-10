@@ -9,6 +9,7 @@ const route = useRoute()
 
 const immersive = computed(() => Boolean(route.meta.immersive))
 const hideFooter = computed(() => Boolean(route.meta.hideFooter))
+const fullWidth = computed(() => Boolean(route.meta.fullWidth))
 </script>
 
 <template>
@@ -17,8 +18,14 @@ const hideFooter = computed(() => Boolean(route.meta.hideFooter))
       <GlobalHeader />
     </a-layout-header>
 
-    <a-layout-content class="basic-layout__content" :class="{ 'is-immersive': immersive }">
-      <div class="basic-layout__content-inner" :class="{ 'is-immersive': immersive }">
+    <a-layout-content
+      class="basic-layout__content"
+      :class="{ 'is-immersive': immersive, 'is-full-width': fullWidth }"
+    >
+      <div
+        class="basic-layout__content-inner"
+        :class="{ 'is-immersive': immersive, 'is-full-width': fullWidth }"
+      >
         <RouterView />
       </div>
     </a-layout-content>
@@ -40,10 +47,8 @@ const hideFooter = computed(() => Boolean(route.meta.hideFooter))
   top: 0;
   z-index: 100;
   height: auto;
-  padding: 0 24px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 16px clamp(16px, 2vw, 28px) 0;
+  background: transparent;
 }
 
 .basic-layout__content {
@@ -56,6 +61,10 @@ const hideFooter = computed(() => Boolean(route.meta.hideFooter))
   padding-top: 18px;
 }
 
+.basic-layout__content.is-full-width {
+  padding: 0;
+}
+
 .basic-layout__content-inner {
   width: 100%;
   max-width: 1280px;
@@ -66,6 +75,11 @@ const hideFooter = computed(() => Boolean(route.meta.hideFooter))
   max-width: 1440px;
 }
 
+.basic-layout__content-inner.is-full-width {
+  max-width: none;
+  min-height: calc(100vh - 88px - 61px);
+}
+
 .basic-layout__footer {
   padding: 20px 16px 28px;
   background: transparent;
@@ -73,7 +87,7 @@ const hideFooter = computed(() => Boolean(route.meta.hideFooter))
 
 @media (max-width: 768px) {
   .basic-layout__header {
-    padding: 0 16px;
+    padding: 12px 12px 0;
   }
 
   .basic-layout__content {

@@ -3,10 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
-  ArrowLeftOutlined,
   CloudUploadOutlined,
   CopyOutlined,
-  DeleteOutlined,
   ExportOutlined,
   InfoCircleOutlined,
   SendOutlined,
@@ -19,16 +17,17 @@ import {
   getAppVoById,
   getAppVoByIdByAdmin,
 } from '@/api/appController'
-import { API_BASE_URL, CHAT_STORAGE_PREFIX, DEPLOY_DOMAIN } from '@/constants/app'
+import AppDetailModal from '@/components/AppDetailModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import { API_BASE_URL, CHAT_STORAGE_PREFIX, DEPLOY_DOMAIN } from '@/constants/app'
 import { useLoginUserStore } from '@/stores/loginUser'
 import {
+  asApiLong,
   canOperateApp,
   formatDateTime,
   formatRelativeTime,
-  getAppDeployUrl,
   getAppName,
-  getAppOwnerName,
+  getAppDeployUrl,
   getAppPreviewUrl,
   getCodeGenTypeLabel,
   hasGeneratedContent,
@@ -45,7 +44,7 @@ type ChatMessage = {
   status?: 'streaming' | 'done' | 'error'
 }
 
-const READONLY_CHAT_TOOLTIP = '无法在别人的作品下继续对话哦~'
+const READONLY_CHAT_TOOLTIP = '无法在别人的作品下继续对话哦'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,7 +65,7 @@ const detailModalOpen = ref(false)
 let activeEventSource: EventSource | null = null
 
 const appId = computed(() => String(route.params.id ?? ''))
-const appIdForApi = computed(() => appId.value as unknown as number)
+const appIdForApi = computed(() => asApiLong(appId.value))
 const appName = computed(() => getAppName(app.value))
 const isAppOwner = computed(
   () => normalizeId(loginUserStore.loginUser.id) !== '' && normalizeId(loginUserStore.loginUser.id) === normalizeId(app.value?.userId),
@@ -145,9 +144,15 @@ function closeActiveEventSource() {
 async function fetchAppDetail() {
   loading.value = true
   try {
+    const id = appIdForApi.value
+    if (id === undefined) {
+      message.error('应用 ID 无效')
+      return
+    }
+
     const response = isCurrentUserAdmin.value
-      ? await getAppVoByIdByAdmin({ id: appIdForApi.value })
-      : await getAppVoById({ id: appIdForApi.value })
+      ? await getAppVoByIdByAdmin({ id })
+      : await getAppVoById({ id })
 
     if (response.data.code === 0 && response.data.data) {
       app.value = response.data.data
@@ -182,7 +187,7 @@ function parseSsePayload(payload: string): string {
     return normalizedPayload
       .replace(/}\s*{/g, '}\n{')
       .split('\n')
-      .map((item): string => parseSsePayload(item))
+      .map((item) => parseSsePayload(item))
       .join('')
   }
 
@@ -339,7 +344,7 @@ async function handleDeployConfirm() {
   const wasDeployed = hasDeployWork.value
   isDeploying.value = true
   try {
-    const response = await deployApp({ appId: currentAppId as unknown as number })
+    const response = await deployApp({ appId: asApiLong(currentAppId) })
     if (response.data.code === 0 && response.data.data) {
       deployResponseUrl.value = buildDeployUrl(response.data.data)
       await fetchAppDetail()
@@ -449,19 +454,13 @@ onBeforeUnmount(() => {
   <div class="chat-page">
     <header class="chat-page__topbar">
       <div class="chat-page__title-wrap">
-        <a-button type="text" @click="router.push('/')">
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          返回首页
-        </a-button>
-        <div>
-          <h1 class="chat-page__title">{{ appName }}</h1>
-          <p class="chat-page__meta">
-            <span v-if="app?.createTime">创建时间：{{ formatDateTime(app.createTime) }}</span>
-            <span v-if="app?.codeGenType">生成方式：{{ getCodeGenTypeLabel(app.codeGenType) }}</span>
-          </p>
-        </div>
+        <p class="chat-page__eyebrow">应用对话</p>
+        <h1 class="chat-page__title">{{ appName }}</h1>
+        <p class="chat-page__meta">
+          <span v-if="app?.createTime">创建于 {{ formatDateTime(app.createTime) }}</span>
+          <span v-if="app?.codeGenType">{{ getCodeGenTypeLabel(app.codeGenType) }}</span>
+          <span v-if="!canEditCurrentApp">只读预览</span>
+        </p>
       </div>
 
       <div class="chat-page__topbar-actions">
@@ -486,7 +485,7 @@ onBeforeUnmount(() => {
               <div v-else class="deploy-card__placeholder">
                 <div class="deploy-card__placeholder-box">
                   <h3>开放链接访问</h3>
-                  <p>部署后，他人可通过固定链接访问页面</p>
+                  <p>部署后，其他人可通过固定链接访问页面</p>
                 </div>
               </div>
 
@@ -527,13 +526,6 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <a-alert
-      v-if="app && !canEditCurrentApp"
-      type="info"
-      show-icon
-      message="当前应用为只读模式，你可以查看生成效果，但不能继续对话或部署。"
-    />
-
     <div class="chat-page__body">
       <section class="chat-panel">
         <div class="chat-panel__messages">
@@ -569,7 +561,7 @@ onBeforeUnmount(() => {
                 v-model:value="draftMessage"
                 :auto-size="{ minRows: 3, maxRows: 6 }"
                 :disabled="true"
-                placeholder="补充说明你希望 AI 如何继续完善应用，例如：把首页改成深色风格，增加功能区和联系表单。"
+                placeholder="补充说明你希望 AI 如何继续完善应用，例如：首页改成深色科技风，增加功能区和联系表单。"
               />
             </div>
           </a-tooltip>
@@ -578,12 +570,12 @@ onBeforeUnmount(() => {
             v-model:value="draftMessage"
             :auto-size="{ minRows: 3, maxRows: 6 }"
             :disabled="isGenerating"
-            placeholder="补充说明你希望 AI 如何继续完善应用，例如：把首页改成深色风格，增加功能区和联系表单。"
+            placeholder="补充说明你希望 AI 如何继续完善应用，例如：首页改成深色科技风，增加功能区和联系表单。"
             @pressEnter.prevent="handleSend"
           />
           <div class="chat-panel__composer-footer">
             <span class="chat-panel__tip">
-              {{ canEditCurrentApp ? '描述越具体，生成结果越稳定。' : READONLY_CHAT_TOOLTIP }}
+              {{ canEditCurrentApp ? '描述越具体，生成结果会越稳定。' : READONLY_CHAT_TOOLTIP }}
             </span>
             <a-button
               type="primary"
@@ -603,7 +595,7 @@ onBeforeUnmount(() => {
       <aside class="preview-panel">
         <div class="preview-panel__header">
           <div class="preview-panel__heading">
-            <h2 class="preview-panel__title">生成后的网页展示</h2>
+            <h2 class="preview-panel__title">生成预览</h2>
             <span class="preview-panel__status" :class="{ 'is-ready': hasGeneratedPreview || isGenerating }">
               {{ previewStatusText }}
             </span>
@@ -624,34 +616,14 @@ onBeforeUnmount(() => {
       </aside>
     </div>
 
-    <a-modal v-model:open="detailModalOpen" :footer="null" width="560px" title="应用详情">
-      <div class="app-detail-modal">
-        <div class="app-detail-modal__row">
-          <span class="app-detail-modal__label">创建者：</span>
-          <div class="app-detail-modal__creator">
-            <a-avatar :src="app?.user?.userAvatar">{{ getAppOwnerName(app).slice(0, 1) }}</a-avatar>
-            <span>{{ getAppOwnerName(app) }}</span>
-          </div>
-        </div>
-
-        <div class="app-detail-modal__row">
-          <span class="app-detail-modal__label">创建时间：</span>
-          <span>{{ formatDateTime(app?.createTime) }}</span>
-        </div>
-
-        <div v-if="canManageCurrentApp" class="app-detail-modal__actions">
-          <a-button type="primary" @click="openEditPage">修改</a-button>
-          <a-popconfirm title="确认删除这个应用吗？" ok-text="删除" cancel-text="取消" @confirm="handleDeleteApp">
-            <a-button danger :loading="isDeleting">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              删除
-            </a-button>
-          </a-popconfirm>
-        </div>
-      </div>
-    </a-modal>
+    <AppDetailModal
+      v-model:open="detailModalOpen"
+      :app="app"
+      :can-manage="canManageCurrentApp"
+      :is-deleting="isDeleting"
+      @edit="openEditPage"
+      @delete="handleDeleteApp"
+    />
   </div>
 </template>
 
@@ -663,19 +635,26 @@ onBeforeUnmount(() => {
 
 .chat-page__topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 22px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.86);
   border-radius: 24px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
 }
 
 .chat-page__title-wrap {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  min-width: 0;
+}
+
+.chat-page__eyebrow {
+  margin: 0 0 6px;
+  color: #6b7280;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .chat-page__title {
@@ -701,7 +680,7 @@ onBeforeUnmount(() => {
 
 .chat-page__body {
   display: grid;
-  grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
+  grid-template-columns: minmax(360px, 2fr) minmax(460px, 3fr);
   gap: 16px;
   min-height: 70vh;
 }
@@ -712,8 +691,9 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 18px;
   background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.88);
   border-radius: 28px;
+  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.08);
 }
 
 .chat-panel {
@@ -811,7 +791,7 @@ onBeforeUnmount(() => {
 
 .preview-panel__header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px;
+  grid-template-columns: minmax(0, 1fr) 140px;
   align-items: start;
   column-gap: 12px;
   min-height: 56px;
@@ -838,7 +818,7 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: flex-end;
   gap: 12px;
-  min-width: 128px;
+  min-width: 140px;
   min-height: 40px;
 }
 
@@ -858,7 +838,6 @@ onBeforeUnmount(() => {
 .preview-panel__body {
   display: grid;
   min-height: 0;
-  margin-top: 0;
   overflow: hidden;
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(255, 255, 255, 0.95));
   border: 1px solid rgba(226, 232, 240, 0.9);
@@ -960,38 +939,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.app-detail-modal {
-  display: grid;
-  gap: 22px;
-  padding: 8px 0 4px;
-}
-
-.app-detail-modal__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.app-detail-modal__label {
-  width: 84px;
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.app-detail-modal__creator {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.app-detail-modal__actions {
-  display: flex;
-  gap: 14px;
-  padding-top: 4px;
-}
-
 :deep(.chat-page__deploy-popover .ant-popover-inner) {
   padding: 12px;
   border-radius: 24px;
@@ -1022,9 +969,7 @@ onBeforeUnmount(() => {
   .chat-page__topbar-actions,
   .chat-panel__composer-footer,
   .preview-panel__heading,
-  .preview-panel__actions,
-  .app-detail-modal__row,
-  .app-detail-modal__actions {
+  .preview-panel__actions {
     flex-direction: column;
     align-items: stretch;
   }
@@ -1039,10 +984,6 @@ onBeforeUnmount(() => {
     min-width: 0;
     min-height: 0;
     justify-content: flex-start;
-  }
-
-  .app-detail-modal__label {
-    width: auto;
   }
 
   .deploy-card {

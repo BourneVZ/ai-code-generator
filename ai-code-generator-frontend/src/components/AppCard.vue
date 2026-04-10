@@ -57,16 +57,10 @@ const deleteApp = (event: MouseEvent) => {
   <article class="app-card" @click="openApp">
     <div class="app-card__preview">
       <img v-if="imageCover" :src="imageCover" :alt="getAppName(app)" class="app-card__image" />
-      <iframe
-        v-else-if="previewUrl"
-        :src="previewUrl"
-        class="app-card__iframe"
-        loading="lazy"
-        title="应用预览"
-      />
+      <iframe v-else-if="previewUrl" :src="previewUrl" class="app-card__iframe" loading="lazy" title="应用预览" />
       <div v-else class="app-card__placeholder">
         <img src="@/assets/logo.png" alt="placeholder" class="app-card__placeholder-logo" />
-        <span>等待生成网页内容</span>
+        <span>等待生成预览内容</span>
       </div>
 
       <div class="app-card__mask" />
@@ -78,7 +72,7 @@ const deleteApp = (event: MouseEvent) => {
 
       <div class="app-card__overlay-actions">
         <a-button type="primary" size="large" class="app-card__cta" @click.stop="openApp">
-          查看对话
+          继续对话
         </a-button>
         <a-button
           v-if="hasDeployWork"
@@ -136,9 +130,9 @@ const deleteApp = (event: MouseEvent) => {
   overflow: hidden;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 28px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(217, 226, 237, 0.85);
+  border-radius: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.07);
   transition:
     transform 0.24s ease,
     box-shadow 0.24s ease,
@@ -146,18 +140,18 @@ const deleteApp = (event: MouseEvent) => {
 }
 
 .app-card:hover {
-  border-color: rgba(59, 130, 246, 0.2);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  border-color: rgba(59, 130, 246, 0.22);
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.12);
   transform: translateY(-4px);
 }
 
 .app-card__preview {
   position: relative;
-  aspect-ratio: 16 / 8.4;
+  aspect-ratio: 16 / 9.8;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(226, 232, 240, 0.72), rgba(248, 250, 252, 0.9)),
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 34%);
+    linear-gradient(135deg, rgba(226, 232, 240, 0.72), rgba(248, 250, 252, 0.92)),
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 36%);
 }
 
 .app-card__image,
@@ -194,7 +188,7 @@ const deleteApp = (event: MouseEvent) => {
 .app-card__mask {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.3));
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.38));
   opacity: 0;
   transition: opacity 0.24s ease;
 }
@@ -217,14 +211,15 @@ const deleteApp = (event: MouseEvent) => {
   inset: 0;
   z-index: 2;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-end;
+  justify-content: stretch;
   gap: 16px;
+  padding: 18px 20px;
   opacity: 0;
   transition:
     opacity 0.22s ease,
     transform 0.22s ease;
-  transform: translateY(8px);
+  transform: translateY(10px);
 }
 
 .app-card:hover .app-card__overlay-actions {
@@ -233,13 +228,14 @@ const deleteApp = (event: MouseEvent) => {
 }
 
 .app-card__cta {
-  min-width: 128px;
-  height: 50px;
-  padding: 0 22px;
-  font-size: 16px;
+  flex: 1;
+  min-width: 118px;
+  height: 44px;
+  padding: 0 20px;
+  font-size: 15px;
   font-weight: 600;
-  border-radius: 16px;
-  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.24);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24);
 }
 
 .app-card__cta--secondary {
@@ -252,7 +248,7 @@ const deleteApp = (event: MouseEvent) => {
 .app-card__body {
   display: grid;
   gap: 12px;
-  padding: 14px 16px 16px;
+  padding: 14px 16px 18px;
 }
 
 .app-card__info-row {
@@ -263,8 +259,8 @@ const deleteApp = (event: MouseEvent) => {
 
 .app-card__avatar {
   flex-shrink: 0;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
 }
 
 .app-card__title-wrap {
@@ -275,7 +271,7 @@ const deleteApp = (event: MouseEvent) => {
 .app-card__title {
   margin: 0;
   color: #0f172a;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.32;
   word-break: break-word;
 }
@@ -296,7 +292,7 @@ const deleteApp = (event: MouseEvent) => {
 
 @media (max-width: 768px) {
   .app-card__preview {
-    aspect-ratio: 16 / 9.6;
+    aspect-ratio: 16 / 9.4;
   }
 
   .app-card__overlay-actions {
@@ -304,8 +300,6 @@ const deleteApp = (event: MouseEvent) => {
     padding: 16px;
     opacity: 1;
     transform: none;
-    align-items: flex-end;
-    justify-content: flex-start;
   }
 
   .app-card__mask {
@@ -315,9 +309,7 @@ const deleteApp = (event: MouseEvent) => {
 
   .app-card__cta {
     min-width: 108px;
-    height: 44px;
-    font-size: 15px;
-    border-radius: 14px;
+    font-size: 14px;
   }
 }
 </style>

@@ -6,14 +6,14 @@ import { message } from 'ant-design-vue'
 import { deleteUserByAdmin, listUserVoByPageByAdmin } from '@/api/userController'
 
 const columns = [
-  { title: 'ID', dataIndex: 'id', width: 90 },
-  { title: '账号', dataIndex: 'userAccount', width: 180 },
-  { title: '用户名', dataIndex: 'userName', width: 180 },
-  { title: '头像', dataIndex: 'userAvatar', width: 120 },
-  { title: '简介', dataIndex: 'userProfile' },
-  { title: '角色', dataIndex: 'userRole', width: 120 },
-  { title: '创建时间', dataIndex: 'createTime', width: 190 },
-  { title: '操作', key: 'action', width: 120, fixed: 'right' },
+  { title: 'ID', dataIndex: 'id', width: 110, ellipsis: true },
+  { title: '账号', dataIndex: 'userAccount', width: 160, ellipsis: true },
+  { title: '用户名', dataIndex: 'userName', width: 140, ellipsis: true },
+  { title: '头像', dataIndex: 'userAvatar', width: 100 },
+  { title: '简介', dataIndex: 'userProfile', ellipsis: true },
+  { title: '角色', dataIndex: 'userRole', width: 110 },
+  { title: '创建时间', dataIndex: 'createTime', width: 170 },
+  { title: '操作', key: 'action', width: 110 },
 ]
 
 const data = ref<API.UserVO[]>([])
@@ -107,7 +107,7 @@ onMounted(() => {
         :data-source="data"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1200 }"
+        table-layout="fixed"
         @change="doTableChange"
       >
         <template #bodyCell="{ column, record }">
