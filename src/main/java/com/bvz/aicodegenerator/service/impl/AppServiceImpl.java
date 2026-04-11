@@ -145,7 +145,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 删除应用时，先清理关联的聊天记录，避免留下冗余数据
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 无效");
         chatHistoryService.removeByAppId(appId);
-        return this.removeById(appId);
+        return super.removeById(appId);
     }
 
     @Override

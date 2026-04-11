@@ -69,6 +69,7 @@ const messages = ref<ChatMessage[]>([])
 const detailModalOpen = ref(false)
 const messagesContainerRef = ref<HTMLElement>()
 const autoInitAttempted = ref(false)
+const previewReady = ref(false)
 
 let activeEventSource: EventSource | null = null
 
@@ -83,8 +84,14 @@ const isCurrentUserAdmin = computed(() => isAdmin(loginUserStore.loginUser))
 const canManageCurrentApp = computed(() => canOperateApp(loginUserStore.loginUser, app.value))
 const previewBaseUrl = computed(() => getAppPreviewUrl(app.value))
 const hasGeneratedPreview = computed(() => hasGeneratedContent(app.value))
+const hasRenderableAssistantMessage = computed(() =>
+  messages.value.some((item) => item.role === 'assistant' && item.status !== 'error' && item.content.trim().length > 0),
+)
+const shouldShowPreview = computed(
+  () => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewReady.value || hasRenderableAssistantMessage.value),
+)
 const previewUrl = computed(() => {
-  if (!hasGeneratedPreview.value || !previewBaseUrl.value) {
+  if (!shouldShowPreview.value || !previewBaseUrl.value) {
     return ''
   }
   return `${previewBaseUrl.value}?t=${previewVersion.value}`
@@ -322,6 +329,7 @@ async function finalizeGeneration(showSuccess = true) {
   }
 
   isGenerating.value = false
+  previewReady.value = true
   closeActiveEventSource()
 
   window.setTimeout(async () => {
@@ -416,6 +424,7 @@ async function sendMessage(content: string) {
 
   draftMessage.value = ''
   isGenerating.value = true
+  previewReady.value = false
 
   const userMessage = createMessage('user', trimmedContent)
   const assistantMessage = createMessage('assistant', '', 'streaming')

@@ -1,6 +1,7 @@
 package com.bvz.aicodegenerator.core;
 
 import com.bvz.aicodegenerator.ai.AiCodeGeneratorService;
+import com.bvz.aicodegenerator.ai.AiCodeGeneratorServiceFactory;
 import com.bvz.aicodegenerator.core.parser.CodeParserExecutor;
 import com.bvz.aicodegenerator.core.saver.CodeFileSaverExecutor;
 import com.bvz.aicodegenerator.exception.BusinessException;
@@ -21,7 +22,10 @@ import java.io.File;
 public class AiCodeGeneratorFacade {
 
     @Resource
-    private AiCodeGeneratorService aiCodeGeneratorService;
+    private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
+
+
+
 
     /**
      * 统一入口：根据类型生成并保存代码
@@ -34,6 +38,8 @@ public class AiCodeGeneratorFacade {
         if (codeGenType == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        // 根据 appId 获取对应的 AI 服务实例
+        AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
         return switch (codeGenType) {
             case HTML -> {
                 Object codeResult = aiCodeGeneratorService.generateHtmlCode(userMessage);
@@ -61,6 +67,8 @@ public class AiCodeGeneratorFacade {
         if (codeGenType == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        // 根据 appId 获取对应的 AI 服务实例
+        AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
         return switch (codeGenType) {
             case HTML -> {
                 Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);

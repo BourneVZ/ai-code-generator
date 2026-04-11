@@ -8,6 +8,7 @@ import com.bvz.aicodegenerator.model.vo.ChatHistoryPageVO;
 import com.bvz.aicodegenerator.model.vo.ChatHistoryVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 
 import java.util.List;
 
@@ -45,6 +46,15 @@ public interface ChatHistoryService extends IService<ChatHistory> {
      * 删除某个应用下的所有聊天记录
      */
     void removeByAppId(Long appId);
+
+    /**
+     * 加载某个应用下的聊天记录到内存
+     * @param appId
+     * @param chatMemory
+     * @param maxCount 最多加载多少条
+     * @return 加载成功的条数
+     */
+    int loadChatHistoryToMemory(Long appId, MessageWindowChatMemory chatMemory, int maxCount);
 
     /**
      * 获取管理员查询条件
