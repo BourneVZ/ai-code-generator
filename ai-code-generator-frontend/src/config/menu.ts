@@ -19,6 +19,12 @@ export const globalMenuItems: MenuItemConfig[] = [
     requiresAdmin: true,
   },
   {
+    key: 'chatManage',
+    label: '对话管理',
+    path: '/admin/chatManage',
+    requiresAdmin: true,
+  },
+  {
     key: 'userManage',
     label: '用户管理',
     path: '/admin/userManage',

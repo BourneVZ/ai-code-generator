@@ -4,9 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { LogoutOutlined } from '@ant-design/icons-vue'
 import { message, type MenuProps } from 'ant-design-vue'
 
-import { userLogout } from '@/api/userController'
 import { globalMenuItems } from '@/config/menu'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { userLogout } from '@/api/userController'
 import { isAdmin } from '@/utils/app'
 
 const route = useRoute()
@@ -17,6 +17,9 @@ const isScrolled = ref(false)
 const selectedKeys = computed(() => {
   if (route.path.startsWith('/admin/appManage')) {
     return ['appManage']
+  }
+  if (route.path.startsWith('/admin/chatManage')) {
+    return ['chatManage']
   }
   if (route.path.startsWith('/admin/userManage')) {
     return ['userManage']
@@ -38,12 +41,10 @@ const menuItems = computed<MenuProps['items']>(() =>
 
 const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
   const target = globalMenuItems.find((item) => item.key === key)
-  if (!target) {
+  if (!target?.path) {
     return
   }
-  if (target.path) {
-    router.push(target.path)
-  }
+  router.push(target.path)
 }
 
 const syncScrollState = () => {

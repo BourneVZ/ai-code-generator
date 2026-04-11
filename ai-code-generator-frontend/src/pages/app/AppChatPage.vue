@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -17,9 +17,10 @@ import {
   getAppVoById,
   getAppVoByIdByAdmin,
 } from '@/api/appController'
+import { listAppChatHistoryByPage } from '@/api/chatHistoryController'
 import AppDetailModal from '@/components/AppDetailModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
-import { API_BASE_URL, CHAT_STORAGE_PREFIX, DEPLOY_DOMAIN } from '@/constants/app'
+import { API_BASE_URL, DEPLOY_DOMAIN } from '@/constants/app'
 import { useLoginUserStore } from '@/stores/loginUser'
 import {
   asApiLong,
@@ -40,11 +41,12 @@ type ChatMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
-  createdAt: number
+  createdAt: string
   status?: 'streaming' | 'done' | 'error'
 }
 
 const READONLY_CHAT_TOOLTIP = '无法在别人的作品下继续对话哦'
+const CHAT_HISTORY_PAGE_SIZE = 10
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +54,10 @@ const loginUserStore = useLoginUserStore()
 
 const app = ref<API.AppVO>()
 const loading = ref(true)
+const historyLoading = ref(false)
+const historyLoadMoreLoading = ref(false)
+const historyHasMore = ref(false)
+const nextHistoryCursor = ref<string>()
 const isGenerating = ref(false)
 const isDeploying = ref(false)
 const isDeleting = ref(false)
@@ -61,6 +67,8 @@ const deployResponseUrl = ref('')
 const draftMessage = ref('')
 const messages = ref<ChatMessage[]>([])
 const detailModalOpen = ref(false)
+const messagesContainerRef = ref<HTMLElement>()
+const autoInitAttempted = ref(false)
 
 let activeEventSource: EventSource | null = null
 
@@ -73,7 +81,6 @@ const isAppOwner = computed(
 const canEditCurrentApp = computed(() => isAppOwner.value)
 const isCurrentUserAdmin = computed(() => isAdmin(loginUserStore.loginUser))
 const canManageCurrentApp = computed(() => canOperateApp(loginUserStore.loginUser, app.value))
-const storageKey = computed(() => `${CHAT_STORAGE_PREFIX}:${appId.value}`)
 const previewBaseUrl = computed(() => getAppPreviewUrl(app.value))
 const hasGeneratedPreview = computed(() => hasGeneratedContent(app.value))
 const previewUrl = computed(() => {
@@ -85,10 +92,6 @@ const previewUrl = computed(() => {
 const deployWorkUrl = computed(() => getAppDeployUrl(app.value) || deployResponseUrl.value)
 const hasDeployWork = computed(() => Boolean(deployWorkUrl.value))
 const deployUpdatedAt = computed(() => app.value?.deployedTime || app.value?.updateTime || '')
-const isUngeneratedEditableApp = computed(
-  () => canEditCurrentApp.value && !hasGeneratedContent(app.value) && messages.value.length === 0,
-)
-const shouldPrefillInitPrompt = computed(() => canEditCurrentApp.value && !hasGeneratedContent(app.value))
 const previewStatusText = computed(() => {
   if (isGenerating.value) {
     return '生成中'
@@ -107,33 +110,62 @@ function buildDeployUrl(value?: string) {
   return `${DEPLOY_DOMAIN}/${trimmed.replace(/^\/+|\/+$/g, '')}/`
 }
 
-function createMessage(role: ChatMessage['role'], content: string, status?: ChatMessage['status']) {
+function createMessage(role: ChatMessage['role'], content: string, status?: ChatMessage['status']): ChatMessage {
   return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
     content,
-    createdAt: Date.now(),
+    createdAt: new Date().toISOString(),
     status,
   }
 }
 
-function saveMessages() {
-  window.localStorage.setItem(storageKey.value, JSON.stringify(messages.value))
+function mapMessageRole(messageType?: string): ChatMessage['role'] {
+  return messageType === 'user' ? 'user' : 'assistant'
 }
 
-function loadMessages() {
-  const raw = window.localStorage.getItem(storageKey.value)
-  if (!raw) {
-    messages.value = []
+function mapMessageStatus(messageStatus?: string): ChatMessage['status'] {
+  if (messageStatus === 'error') {
+    return 'error'
+  }
+  return 'done'
+}
+
+function transformHistoryMessage(record: API.ChatHistoryVO): ChatMessage {
+  return {
+    id: `history-${normalizeId(record.id)}-${record.createTime || ''}`,
+    role: mapMessageRole(record.messageType),
+    content: record.message || record.errorMessage || '',
+    createdAt: record.createTime || new Date().toISOString(),
+    status: mapMessageStatus(record.messageStatus),
+  }
+}
+
+function mergeMessages(nextMessages: ChatMessage[], mode: 'replace' | 'prepend' | 'append' = 'replace') {
+  if (mode === 'replace') {
+    messages.value = nextMessages
     return
   }
 
-  try {
-    const parsed = JSON.parse(raw) as ChatMessage[]
-    messages.value = Array.isArray(parsed) ? parsed : []
-  } catch {
-    messages.value = []
-  }
+  const seen = new Set<string>()
+  const merged = mode === 'prepend' ? [...nextMessages, ...messages.value] : [...messages.value, ...nextMessages]
+  messages.value = merged.filter((item) => {
+    if (seen.has(item.id)) {
+      return false
+    }
+    seen.add(item.id)
+    return true
+  })
+}
+
+function scrollToBottom() {
+  window.requestAnimationFrame(() => {
+    const container = messagesContainerRef.value
+    if (!container) {
+      return
+    }
+    container.scrollTop = container.scrollHeight
+  })
 }
 
 function closeActiveEventSource() {
@@ -165,6 +197,73 @@ async function fetchAppDetail() {
   }
 }
 
+async function fetchChatHistory(loadMore = false) {
+  const currentAppId = appIdForApi.value
+  if (currentAppId === undefined) {
+    return
+  }
+
+  if (loadMore && (!historyHasMore.value || historyLoadMoreLoading.value)) {
+    return
+  }
+
+  const loadingRef = loadMore ? historyLoadMoreLoading : historyLoading
+  loadingRef.value = true
+
+  const container = messagesContainerRef.value
+  const previousScrollHeight = container?.scrollHeight ?? 0
+  const previousScrollTop = container?.scrollTop ?? 0
+
+  try {
+    const response = await listAppChatHistoryByPage({
+      appId: currentAppId,
+      pageSize: CHAT_HISTORY_PAGE_SIZE,
+      lastCreateTime: loadMore ? nextHistoryCursor.value : undefined,
+    })
+
+    if (response.data.code === 0 && response.data.data) {
+      const pageData = response.data.data
+      const historyMessages = (pageData.records ?? []).map(transformHistoryMessage)
+
+      mergeMessages(historyMessages, loadMore ? 'prepend' : 'replace')
+      historyHasMore.value = Boolean(pageData.hasMore)
+      nextHistoryCursor.value = pageData.nextLastCreateTime
+
+      await nextTick()
+      if (loadMore && container) {
+        container.scrollTop = container.scrollHeight - previousScrollHeight + previousScrollTop
+      } else {
+        scrollToBottom()
+      }
+      return
+    }
+
+    message.error(response.data.message || '加载对话历史失败')
+  } finally {
+    loadingRef.value = false
+  }
+}
+
+async function maybeAutoSendInitialMessage() {
+  if (autoInitAttempted.value || !canEditCurrentApp.value || messages.value.length > 0 || isGenerating.value) {
+    return
+  }
+
+  const autoPrompt = typeof route.query.autoPrompt === 'string' ? route.query.autoPrompt.trim() : ''
+  const initialPrompt = autoPrompt || app.value?.initPrompt?.trim() || ''
+  autoInitAttempted.value = true
+
+  if (!initialPrompt) {
+    return
+  }
+
+  await sendMessage(initialPrompt)
+
+  if (route.query.autoPrompt) {
+    await router.replace({ path: route.path })
+  }
+}
+
 function appendAssistantChunk(chunk: string) {
   const lastMessage = messages.value.at(-1)
   if (!lastMessage || lastMessage.role !== 'assistant') {
@@ -174,7 +273,7 @@ function appendAssistantChunk(chunk: string) {
   lastMessage.content += chunk
   lastMessage.status = 'streaming'
   messages.value = [...messages.value]
-  saveMessages()
+  scrollToBottom()
 }
 
 function parseSsePayload(payload: string): string {
@@ -220,7 +319,6 @@ async function finalizeGeneration(showSuccess = true) {
   if (lastMessage?.role === 'assistant') {
     lastMessage.status = 'done'
     messages.value = [...messages.value]
-    saveMessages()
   }
 
   isGenerating.value = false
@@ -229,6 +327,7 @@ async function finalizeGeneration(showSuccess = true) {
   window.setTimeout(async () => {
     await fetchAppDetail()
     previewVersion.value = Date.now()
+    await fetchChatHistory()
   }, 800)
 
   if (showSuccess) {
@@ -242,7 +341,6 @@ function failGeneration(content = '生成中断，请稍后重试。') {
     lastMessage.status = 'error'
     lastMessage.content = lastMessage.content || content
     messages.value = [...messages.value]
-    saveMessages()
   }
 
   isGenerating.value = false
@@ -250,8 +348,13 @@ function failGeneration(content = '生成中断，请稍后重试。') {
 }
 
 function startSseGeneration(content: string) {
+  const currentAppId = normalizeId(app.value?.id)
+  if (!currentAppId) {
+    return
+  }
+
   const url = new URL(`${API_BASE_URL}/app/chat/gen/code`)
-  url.searchParams.set('appId', normalizeId(app.value?.id))
+  url.searchParams.set('appId', currentAppId)
   url.searchParams.set('message', content)
 
   closeActiveEventSource()
@@ -316,8 +419,8 @@ async function sendMessage(content: string) {
 
   const userMessage = createMessage('user', trimmedContent)
   const assistantMessage = createMessage('assistant', '', 'streaming')
-  messages.value = [...messages.value, userMessage, assistantMessage]
-  saveMessages()
+  mergeMessages([userMessage, assistantMessage], 'append')
+  scrollToBottom()
 
   try {
     startSseGeneration(trimmedContent)
@@ -329,6 +432,10 @@ async function sendMessage(content: string) {
 
 async function handleSend() {
   await sendMessage(draftMessage.value)
+}
+
+async function handleLoadMoreHistory() {
+  await fetchChatHistory(true)
 }
 
 async function handleDeployConfirm() {
@@ -418,8 +525,6 @@ async function handleDeleteApp() {
   }
 }
 
-watch(messages, saveMessages, { deep: true })
-
 watch(
   () => previewBaseUrl.value,
   () => {
@@ -431,18 +536,8 @@ watch(
 
 onMounted(async () => {
   await fetchAppDetail()
-  loadMessages()
-
-  const autoPrompt = route.query.autoPrompt
-  if (autoPrompt && String(autoPrompt).trim() && isUngeneratedEditableApp.value) {
-    await sendMessage(String(autoPrompt))
-    router.replace({ path: route.path })
-    return
-  }
-
-  if (shouldPrefillInitPrompt.value && app.value?.initPrompt?.trim() && !draftMessage.value.trim()) {
-    draftMessage.value = app.value.initPrompt.trim()
-  }
+  await fetchChatHistory()
+  await maybeAutoSendInitialMessage()
 })
 
 onBeforeUnmount(() => {
@@ -528,8 +623,12 @@ onBeforeUnmount(() => {
 
     <div class="chat-page__body">
       <section class="chat-panel">
-        <div class="chat-panel__messages">
-          <a-spin :spinning="loading">
+        <div ref="messagesContainerRef" class="chat-panel__messages">
+          <a-spin :spinning="loading || historyLoading">
+            <div v-if="historyHasMore || historyLoadMoreLoading" class="chat-panel__history-actions">
+              <a-button :loading="historyLoadMoreLoading" @click="handleLoadMoreHistory">加载更多</a-button>
+            </div>
+
             <template v-if="messages.length">
               <div
                 v-for="item in messages"
@@ -543,14 +642,14 @@ onBeforeUnmount(() => {
                     <template v-else>{{ item.content }}</template>
                   </div>
                   <div class="message-bubble__meta">
-                    <span>{{ new Date(item.createdAt).toLocaleTimeString('zh-CN') }}</span>
+                    <span>{{ formatDateTime(item.createdAt) }}</span>
                     <span v-if="item.status === 'streaming'">生成中</span>
                     <span v-else-if="item.status === 'error'">失败</span>
                   </div>
                 </div>
               </div>
             </template>
-            <a-empty v-else description="发送一句提示词，开始生成网站应用。" />
+            <a-empty v-else-if="!historyLoading" description="发送一句提示词，开始生成网站应用。" />
           </a-spin>
         </div>
 
@@ -577,12 +676,7 @@ onBeforeUnmount(() => {
             <span class="chat-panel__tip">
               {{ canEditCurrentApp ? '描述越具体，生成结果会越稳定。' : READONLY_CHAT_TOOLTIP }}
             </span>
-            <a-button
-              type="primary"
-              :loading="isGenerating"
-              :disabled="!canEditCurrentApp"
-              @click="handleSend"
-            >
+            <a-button type="primary" :loading="isGenerating" :disabled="!canEditCurrentApp" @click="handleSend">
               <template #icon>
                 <SendOutlined />
               </template>
@@ -711,6 +805,12 @@ onBeforeUnmount(() => {
   max-height: calc(100vh - 290px);
   padding-right: 4px;
   overflow: auto;
+}
+
+.chat-panel__history-actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
 }
 
 .message-row {
