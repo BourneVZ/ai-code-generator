@@ -13,6 +13,7 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -83,6 +84,20 @@ public class AiCodeGeneratorServiceFactory {
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                     ))
+                    .toolArgumentsErrorHandler((error, context) -> {
+                        String toolName = context.toolExecutionRequest().name();
+                        log.warn("工具参数解析失败, tool={}, error={}", toolName, error.getMessage());
+                        return ToolErrorHandlerResult.text(
+                                "工具调用失败：参数不是合法 JSON，请严格转义 content 字段中的引号、反斜杠和换行后重试。"
+                        );
+                    })
+                    .toolExecutionErrorHandler((error, context) -> {
+                        String toolName = context.toolExecutionRequest().name();
+                        log.error("工具执行失败, tool={}", toolName, error);
+                        return ToolErrorHandlerResult.text(
+                                "工具执行失败：" + toolName + "，原因：" + error.getMessage()
+                        );
+                    })
                     .build();
             // HTML 和多文件生成使用默认模型
             case HTML, MULTI_FILE -> AiServices.builder(AiCodeGeneratorService.class)

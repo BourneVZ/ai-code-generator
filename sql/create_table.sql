@@ -51,10 +51,10 @@ create table if not exists app
 create table if not exists chat_history
 (
     id            bigint auto_increment comment 'id' primary key,
-    message       text                               not null comment '消息内容',
+    message       longtext                           not null comment '消息内容',
     messageType   varchar(32)                        not null comment '消息类型：user/ai',
     messageStatus varchar(32) default 'success'      not null comment '消息状态：success/error',
-    errorMessage  text                               null comment '错误信息',
+    errorMessage  longtext                           null comment '错误信息',
     appId         bigint                             not null comment '应用 id',
     userId        bigint                             not null comment '创建用户 id',
     createTime    datetime default CURRENT_TIMESTAMP not null comment '创建时间',

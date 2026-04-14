@@ -1,12 +1,20 @@
 package com.bvz.aicodegenerator.core;
 
+import cn.hutool.json.JSONUtil;
 import com.bvz.aicodegenerator.ai.AiCodeGeneratorService;
 import com.bvz.aicodegenerator.ai.AiCodeGeneratorServiceFactory;
+import com.bvz.aicodegenerator.ai.model.message.AiResponseMessage;
+import com.bvz.aicodegenerator.ai.model.message.ToolExecutedMessage;
+import com.bvz.aicodegenerator.ai.model.message.ToolRequestMessage;
 import com.bvz.aicodegenerator.core.parser.CodeParserExecutor;
 import com.bvz.aicodegenerator.core.saver.CodeFileSaverExecutor;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.service.tool.BeforeToolExecution;
+import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,12 +35,10 @@ public class AiCodeGeneratorFacade {
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
 
-
-
     /**
      * 统一入口：根据类型生成并保存代码
      *
-     * @param userMessage     用户提示词
+     * @param userMessage 用户提示词
      * @param codeGenType 生成类型
      * @return 保存的目录
      */
@@ -61,9 +67,9 @@ public class AiCodeGeneratorFacade {
     /**
      * 统一入口：根据类型生成并保存代码（流式）
      *
-     * @param userMessage 用户提示词
+     * @param userMessage     用户提示词
      * @param codeGenTypeEnum 生成类型
-     * @param appId       应用 ID
+     * @param appId           应用 ID
      */
 
     public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) {
@@ -82,8 +88,8 @@ public class AiCodeGeneratorFacade {
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             case VUE_PROJECT -> {
-                Flux<String> codeStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
-                yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
+                TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
+                yield processTokenStream(tokenStream);
             }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
@@ -91,6 +97,38 @@ public class AiCodeGeneratorFacade {
             }
         };
     }
+
+    /**
+     * 将 TokenStream 转换为 Flux<String>，并传递工具调用信息
+     *
+     * @param tokenStream TokenStream 对象
+     * @return Flux<String> 流式响应
+     */
+    private Flux<String> processTokenStream(TokenStream tokenStream) {
+        return Flux.create(sink -> {
+            tokenStream.onPartialResponse((String partialResponse) -> {
+                        AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
+                        sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                    })
+                    .beforeToolExecution((BeforeToolExecution beforeToolExecution) -> {
+                        ToolRequestMessage toolRequestMessage = new ToolRequestMessage(beforeToolExecution.request());
+                        sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                    })
+                    .onToolExecuted((ToolExecution toolExecution) -> {
+                        ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
+                        sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                    })
+                    .onCompleteResponse((ChatResponse response) -> {
+                        sink.complete();
+                    })
+                    .onError((Throwable error) -> {
+                        error.printStackTrace();
+                        sink.error(error);
+                    })
+                    .start();
+        });
+    }
+
 
     /**
      * 通用流式代码处理方法

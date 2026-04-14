@@ -5,8 +5,11 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
+import com.bvz.aicodegenerator.ai.model.message.AiResponseMessage;
 import com.bvz.aicodegenerator.constant.AppConstant;
 import com.bvz.aicodegenerator.core.AiCodeGeneratorFacade;
+import com.bvz.aicodegenerator.core.handler.StreamHandlerExecutor;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.exception.ThrowUtils;
@@ -52,6 +55,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private ChatHistoryService chatHistoryService;
 
+    @Resource
+    private StreamHandlerExecutor streamHandlerExecutor;
+
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
         // 1. 参数校验
@@ -74,17 +80,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 5. 先保存用户消息，再开始调用 AI，确保对话过程完整可追溯
         chatHistoryService.saveUserMessage(appId, loginUser.getId(), message);
 
-        // 6. 流式接收 AI 内容，等流结束后统一保存一条 AI 消息
-        StringBuilder aiReplyBuilder = new StringBuilder();
-        AtomicBoolean aiMessageSaved = new AtomicBoolean(false);
-        return aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId)
-                .doOnNext(aiReplyBuilder::append)
-                .doOnComplete(() -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
-                        aiReplyBuilder.toString(), null))
-                .doOnError(throwable -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
-                        aiReplyBuilder.toString(), throwable))
-                .doOnCancel(() -> saveAiReplyOnce(aiMessageSaved, appId, loginUser.getId(),
-                        aiReplyBuilder.toString(), new RuntimeException("AI 响应已取消")));
+        // 6. 调用 AI 生成代码（流式）
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+
+        // 7. 收集 AI 响应内容并在完成后记录到对话历史
+        return streamHandlerExecutor
+                .doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .onErrorResume(error -> Flux.just(buildStreamErrorMessage(codeGenTypeEnum, error)));
     }
 
     @Override
@@ -235,28 +237,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }).collect(Collectors.toList());
     }
 
-    /**
-     * 记录 AI 成功 / 失败消息，避免 doOnComplete、doOnError、doOnCancel 重复写入
-     */
-    private void saveAiReplyOnce(
-            AtomicBoolean aiMessageSaved,
-            Long appId,
-            Long userId,
-            String aiReply,
-            Throwable throwable
-    ) {
-        if (!aiMessageSaved.compareAndSet(false, true)) {
-            return;
+
+    private String buildStreamErrorMessage(CodeGenTypeEnum codeGenTypeEnum, Throwable error) {
+        String errorMessage = StrUtil.blankToDefault(error.getMessage(), "AI 生成失败");
+        if (CodeGenTypeEnum.VUE_PROJECT.equals(codeGenTypeEnum)) {
+            return JSONUtil.toJsonStr(new AiResponseMessage("生成失败：" + errorMessage));
         }
-        try {
-            if (throwable == null) {
-                chatHistoryService.saveAiMessage(appId, userId, aiReply);
-                return;
-            }
-            String errorMessage = StrUtil.blankToDefault(throwable.getMessage(), "AI 回复失败");
-            chatHistoryService.saveAiErrorMessage(appId, userId, aiReply, errorMessage);
-        } catch (Exception ignored) {
-            // 聊天记录落库失败不应影响主流程的异常抛出
-        }
+        return "生成失败：" + errorMessage;
     }
 }

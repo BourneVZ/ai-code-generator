@@ -54,9 +54,10 @@ class AiCodeGeneratorFacadeTest {
 
     @Test
     void generateVueProjectCodeStream() {
+        long appId = System.nanoTime();
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(
                 "简单的任务记录网站，总代码量不超过 200 行",
-                CodeGenTypeEnum.VUE_PROJECT, 5L);
+                CodeGenTypeEnum.VUE_PROJECT, appId);
         // 阻塞等待所有数据收集完成
         List<String> result = codeStream.collectList().block();
         // 验证结果

@@ -262,8 +262,52 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
                 .messageStatus(messageStatusEnum.getValue())
                 .errorMessage(errorMessage)
                 .build();
-        boolean result = this.save(chatHistory);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "保存对话历史失败");
+        saveChatHistoryWithFallback(chatHistory);
+    }
+
+    private void saveChatHistoryWithFallback(ChatHistory chatHistory) {
+        int[] messageLimits = {Integer.MAX_VALUE, 8000, 2000, 512};
+        int[] errorLimits = {Integer.MAX_VALUE, 4000, 1000, 255};
+        RuntimeException lastException = null;
+
+        for (int i = 0; i < messageLimits.length; i++) {
+            ChatHistory candidate = ChatHistory.builder()
+                    .appId(chatHistory.getAppId())
+                    .userId(chatHistory.getUserId())
+                    .message(limitText(chatHistory.getMessage(), messageLimits[i]))
+                    .messageType(chatHistory.getMessageType())
+                    .messageStatus(chatHistory.getMessageStatus())
+                    .errorMessage(limitText(chatHistory.getErrorMessage(), errorLimits[i]))
+                    .build();
+            try {
+                boolean result = this.save(candidate);
+                ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "保存对话历史失败");
+                if (i > 0) {
+                    log.warn("聊天记录已按降级长度保存, appId={}, userId={}, step={}",
+                            candidate.getAppId(), candidate.getUserId(), i);
+                }
+                return;
+            } catch (RuntimeException e) {
+                lastException = e;
+                log.warn("保存聊天记录失败，尝试降级重试, appId={}, userId={}, step={}, error={}",
+                        candidate.getAppId(), candidate.getUserId(), i, e.getMessage());
+            }
+        }
+
+        if (lastException != null) {
+            throw lastException;
+        }
+        throw new BusinessException(ErrorCode.OPERATION_ERROR, "保存对话历史失败");
+    }
+
+    private String limitText(String text, int maxLength) {
+        if (text == null || maxLength == Integer.MAX_VALUE || text.length() <= maxLength) {
+            return text;
+        }
+        if (maxLength <= 3) {
+            return text.substring(0, maxLength);
+        }
+        return text.substring(0, maxLength - 3) + "...";
     }
 
     /**
