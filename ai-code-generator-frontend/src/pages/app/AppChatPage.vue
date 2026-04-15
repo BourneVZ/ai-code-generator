@@ -70,8 +70,13 @@ const detailModalOpen = ref(false)
 const messagesContainerRef = ref<HTMLElement>()
 const autoInitAttempted = ref(false)
 const previewReady = ref(false)
+const previewLoaded = ref(false)
 
 let activeEventSource: EventSource | null = null
+let previewRefreshTimer: number | null = null
+
+const PREVIEW_REFRESH_INTERVAL = 2000
+const PREVIEW_REFRESH_LIMIT = 60
 
 const appId = computed(() => String(route.params.id ?? ''))
 const appIdForApi = computed(() => asApiLong(appId.value))
@@ -84,6 +89,7 @@ const isCurrentUserAdmin = computed(() => isAdmin(loginUserStore.loginUser))
 const canManageCurrentApp = computed(() => canOperateApp(loginUserStore.loginUser, app.value))
 const previewBaseUrl = computed(() => getAppPreviewUrl(app.value))
 const hasGeneratedPreview = computed(() => hasGeneratedContent(app.value))
+const canRenderPreview = computed(() => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewLoaded.value))
 const hasRenderableAssistantMessage = computed(() =>
   messages.value.some((item) => item.role === 'assistant' && item.status !== 'error' && item.content.trim().length > 0),
 )
@@ -91,7 +97,7 @@ const shouldShowPreview = computed(
   () => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewReady.value || hasRenderableAssistantMessage.value),
 )
 const previewUrl = computed(() => {
-  if (!shouldShowPreview.value || !previewBaseUrl.value) {
+  if (!canRenderPreview.value || !previewBaseUrl.value) {
     return ''
   }
   return `${previewBaseUrl.value}?t=${previewVersion.value}`
@@ -104,6 +110,16 @@ const previewStatusText = computed(() => {
     return '生成中'
   }
   return hasGeneratedPreview.value ? '已生成' : '等待生成'
+})
+
+const previewStatusLabel = computed(() => {
+  if (isGenerating.value) {
+    return '生成中'
+  }
+  if (previewReady.value || hasGeneratedPreview.value || previewLoaded.value) {
+    return '已生成'
+  }
+  return '等待生成'
 })
 
 function createMessage(role: ChatMessage['role'], content: string, status?: ChatMessage['status']): ChatMessage {
@@ -167,6 +183,52 @@ function scrollToBottom() {
 function closeActiveEventSource() {
   activeEventSource?.close()
   activeEventSource = null
+}
+
+function clearPreviewRefreshTimer() {
+  if (previewRefreshTimer !== null) {
+    window.clearTimeout(previewRefreshTimer)
+    previewRefreshTimer = null
+  }
+}
+
+async function isPreviewReachable() {
+  if (!previewBaseUrl.value) {
+    return false
+  }
+
+  try {
+    const response = await fetch(`${previewBaseUrl.value}?probe=${Date.now()}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function refreshPreviewUntilAvailable(attempt = 0) {
+  clearPreviewRefreshTimer()
+
+  if (!previewReady.value || !previewBaseUrl.value) {
+    return
+  }
+
+  const reachable = await isPreviewReachable()
+  if (reachable) {
+    previewVersion.value = Date.now()
+    previewLoaded.value = true
+    return
+  }
+
+  if (attempt >= PREVIEW_REFRESH_LIMIT) {
+    return
+  }
+
+  previewRefreshTimer = window.setTimeout(() => {
+    void refreshPreviewUntilAvailable(attempt + 1)
+  }, PREVIEW_REFRESH_INTERVAL)
 }
 
 async function fetchAppDetail() {
@@ -323,8 +385,8 @@ async function finalizeGeneration(showSuccess = true) {
 
   window.setTimeout(async () => {
     await fetchAppDetail()
-    previewVersion.value = Date.now()
     await fetchChatHistory()
+    await refreshPreviewUntilAvailable()
   }, 800)
 
   if (showSuccess) {
@@ -341,7 +403,22 @@ function failGeneration(content = '生成中断，请稍后重试。') {
   }
 
   isGenerating.value = false
+  clearPreviewRefreshTimer()
   closeActiveEventSource()
+}
+
+async function recoverGenerationFromStreamClosure() {
+  const lastMessage = messages.value.at(-1)
+  const hasAssistantContent = lastMessage?.role === 'assistant' && lastMessage.content.trim().length > 0
+
+  try {
+    await fetchAppDetail()
+    await fetchChatHistory()
+  } catch {
+    return false
+  }
+
+  return hasGeneratedContent(app.value) || Boolean(hasAssistantContent)
 }
 
 function startSseGeneration(content: string) {
@@ -392,6 +469,13 @@ function startSseGeneration(content: string) {
       return
     }
 
+    const recovered = await recoverGenerationFromStreamClosure()
+    if (recovered) {
+      streamCompleted = true
+      await finalizeGeneration(false)
+      return
+    }
+
     streamCompleted = true
     failGeneration()
     message.error('生成失败')
@@ -414,6 +498,8 @@ async function sendMessage(content: string) {
   draftMessage.value = ''
   isGenerating.value = true
   previewReady.value = false
+  previewLoaded.value = false
+  clearPreviewRefreshTimer()
 
   const userMessage = createMessage('user', trimmedContent)
   const assistantMessage = createMessage('assistant', '', 'streaming')
@@ -523,11 +609,17 @@ async function handleDeleteApp() {
   }
 }
 
+function handlePreviewLoad() {
+  previewLoaded.value = true
+}
+
 watch(
-  () => previewBaseUrl.value,
-  () => {
-    if (hasGeneratedPreview.value && previewBaseUrl.value) {
+  [() => previewBaseUrl.value, () => hasGeneratedPreview.value],
+  ([baseUrl, generated]) => {
+    if (baseUrl && generated) {
       previewVersion.value = Date.now()
+      previewLoaded.value = true
+      clearPreviewRefreshTimer()
     }
   },
 )
@@ -539,6 +631,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearPreviewRefreshTimer()
   closeActiveEventSource()
 })
 </script>
@@ -688,8 +781,8 @@ onBeforeUnmount(() => {
         <div class="preview-panel__header">
           <div class="preview-panel__heading">
             <h2 class="preview-panel__title">生成预览</h2>
-            <span class="preview-panel__status" :class="{ 'is-ready': hasGeneratedPreview || isGenerating }">
-              {{ previewStatusText }}
+            <span class="preview-panel__status" :class="{ 'is-ready': previewReady || hasGeneratedPreview || previewLoaded || isGenerating }">
+              {{ previewStatusLabel }}
             </span>
           </div>
           <div class="preview-panel__actions">
@@ -698,10 +791,10 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="preview-panel__body">
-          <iframe v-if="previewUrl" :src="previewUrl" class="preview-panel__iframe" title="网页预览" />
-          <div v-else-if="isGenerating" class="preview-panel__placeholder preview-panel__placeholder--loading">
+          <iframe v-if="previewUrl" :src="previewUrl" class="preview-panel__iframe" title="网页预览" @load="handlePreviewLoad" />
+          <div v-else-if="isGenerating || shouldShowPreview" class="preview-panel__placeholder preview-panel__placeholder--loading">
             <a-spin />
-            <p>正在生成网页，请稍候...</p>
+            <p>{{ isGenerating ? '正在生成网页，请稍候...' : '生成已完成，正在刷新预览...' }}</p>
           </div>
           <a-empty v-else description="流式生成完成后，这里会自动展示网页效果。" />
         </div>

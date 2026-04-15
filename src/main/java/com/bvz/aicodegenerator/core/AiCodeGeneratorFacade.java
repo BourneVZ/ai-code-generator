@@ -19,8 +19,11 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum.HTML;
 
@@ -106,6 +109,7 @@ public class AiCodeGeneratorFacade {
      */
     private Flux<String> processTokenStream(TokenStream tokenStream) {
         return Flux.create(sink -> {
+            AtomicBoolean terminalSignalSent = new AtomicBoolean(false);
             tokenStream.onPartialResponse((String partialResponse) -> {
                         AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                         sink.next(JSONUtil.toJsonStr(aiResponseMessage));
@@ -119,14 +123,45 @@ public class AiCodeGeneratorFacade {
                         sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
                     })
                     .onCompleteResponse((ChatResponse response) -> {
-                        sink.complete();
+                        completeSinkSafely(sink, terminalSignalSent);
                     })
                     .onError((Throwable error) -> {
-                        error.printStackTrace();
-                        sink.error(error);
+                        if (isBenignStreamClosed(error)) {
+                            log.warn("Streaming response closed after output completed, treating as complete. message={}", error.getMessage());
+                            completeSinkSafely(sink, terminalSignalSent);
+                            return;
+                        }
+                        log.error("Streaming response failed", error);
+                        errorSinkSafely(sink, terminalSignalSent, error);
                     })
                     .start();
         });
+    }
+
+    private void completeSinkSafely(FluxSink<String> sink, AtomicBoolean terminalSignalSent) {
+        if (terminalSignalSent.compareAndSet(false, true)) {
+            sink.complete();
+        }
+    }
+
+    private void errorSinkSafely(FluxSink<String> sink, AtomicBoolean terminalSignalSent, Throwable error) {
+        if (terminalSignalSent.compareAndSet(false, true)) {
+            sink.error(error);
+        }
+    }
+
+    private boolean isBenignStreamClosed(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof IOException && "closed".equalsIgnoreCase(current.getMessage())) {
+                return true;
+            }
+            if ("closed".equalsIgnoreCase(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
 
