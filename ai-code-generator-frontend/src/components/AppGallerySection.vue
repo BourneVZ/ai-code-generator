@@ -42,13 +42,7 @@ const emit = defineEmits<{
   delete: [app: API.AppVO]
 }>()
 
-const handlePageChange = (page: number, pageSize: number) => {
-  emit('update:current', page)
-  emit('update:pageSize', pageSize)
-  emit('pageChange')
-}
-
-const handlePageSizeChange = (page: number, pageSize: number) => {
+const handlePaginationChange = (page: number, pageSize: number) => {
   emit('update:current', page)
   emit('update:pageSize', pageSize)
   emit('pageChange')
@@ -100,8 +94,8 @@ const handlePageSizeChange = (page: number, pageSize: number) => {
         :total="total"
         :page-size-options="['4', '8', '12', '20']"
         show-size-changer
-        @change="handlePageChange"
-        @showSizeChange="handlePageSizeChange"
+        @change="handlePaginationChange"
+        @showSizeChange="handlePaginationChange"
       />
     </div>
   </section>

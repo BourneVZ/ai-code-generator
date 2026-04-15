@@ -5,14 +5,11 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 
 import AppGallerySection from '@/components/AppGallerySection.vue'
+import CodeGenTypeSelector from '@/components/CodeGenTypeSelector.vue'
 import { addApp, deleteMyApp, listGoodAppVoByPage, listMyAppVoByPage } from '@/api/appController'
-import {
-  DEFAULT_CODE_GEN_TYPE,
-  FEATURED_APP_PAGE_SIZE,
-  MY_APP_PAGE_SIZE,
-  QUICK_PROMPTS,
-} from '@/constants/app'
+import { FEATURED_APP_PAGE_SIZE, MY_APP_PAGE_SIZE, QUICK_PROMPTS } from '@/constants/app'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { DEFAULT_CODE_GEN_TYPE } from '@/utils/codeGenTypes'
 import { buildAppName, getAppDeployUrl, sanitizeAppQueryRequest } from '@/utils/app'
 
 const router = useRouter()
@@ -204,14 +201,12 @@ onMounted(() => {
             />
 
             <div class="prompt-composer__footer">
-              <a-radio-group
+              <CodeGenTypeSelector
                 v-model:value="creatorForm.codeGenType"
+                mode="radio"
                 button-style="solid"
                 size="small"
-              >
-                <a-radio-button value="multi_file">多文件网站</a-radio-button>
-                <a-radio-button value="html">单页 HTML</a-radio-button>
-              </a-radio-group>
+              />
 
               <a-button type="primary" size="large" :loading="createLoading" @click="handleCreateApp">
                 <template #icon>

@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 
 import { deleteAppByAdmin, listAppVoByPageByAdmin, updateAppByAdmin } from '@/api/appController'
+import CodeGenTypeSelector from '@/components/CodeGenTypeSelector.vue'
+import CodeGenTypeTag from '@/components/CodeGenTypeTag.vue'
 import { FEATURED_PRIORITY } from '@/constants/app'
-import { asApiLong, formatDateTime, getCodeGenTypeLabel, sanitizeAppQueryRequest } from '@/utils/app'
+import { asApiLong, formatDateTime, sanitizeAppQueryRequest } from '@/utils/app'
 
 const router = useRouter()
 
@@ -141,14 +143,11 @@ onMounted(() => {
             <a-input v-model:value="searchParams.appName" placeholder="按名称搜索" allow-clear />
           </a-form-item>
           <a-form-item label="代码类型">
-            <a-select
+            <CodeGenTypeSelector
               v-model:value="searchParams.codeGenType"
+              mode="select"
               placeholder="全部"
               allow-clear
-              :options="[
-                { label: '多文件', value: 'multi_file' },
-                { label: 'HTML', value: 'html' },
-              ]"
             />
           </a-form-item>
           <a-form-item label="创建者 ID">
@@ -187,7 +186,7 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'codeGenType'">
-            <a-tag color="blue">{{ getCodeGenTypeLabel(record.codeGenType) }}</a-tag>
+            <CodeGenTypeTag :type="record.codeGenType" />
           </template>
           <template v-else-if="column.dataIndex === 'cover'">
             <a-image v-if="record.cover" :src="record.cover" :width="72" />

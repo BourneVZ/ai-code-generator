@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import { DeleteOutlined } from '@ant-design/icons-vue'
 
-import { formatDateTime, getAppName, getAppOwnerName, getCodeGenTypeLabel } from '@/utils/app'
+import { formatCodeGenType } from '@/utils/codeGenTypes'
+import { formatDateTime, getAppName, getAppOwnerName } from '@/utils/app'
 
 const props = withDefaults(
   defineProps<{
@@ -58,7 +59,7 @@ const visible = computed({
 
         <div class="app-detail-modal__item">
           <span class="app-detail-modal__label">生成方式</span>
-          <strong>{{ getCodeGenTypeLabel(app?.codeGenType) }}</strong>
+          <strong>{{ formatCodeGenType(app?.codeGenType) }}</strong>
         </div>
 
         <div class="app-detail-modal__item">

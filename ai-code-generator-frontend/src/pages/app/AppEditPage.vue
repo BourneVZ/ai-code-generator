@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 
 import { getAppVoById, getAppVoByIdByAdmin, updateApp, updateAppByAdmin } from '@/api/appController'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { formatCodeGenType } from '@/utils/codeGenTypes'
 import { asApiLong, canOperateApp, formatDateTime, getAppName, isAdmin } from '@/utils/app'
 
 const route = useRoute()
@@ -143,7 +144,7 @@ onMounted(() => {
         </div>
         <div class="edit-meta-card__item">
           <span>生成类型</span>
-          <strong>{{ app?.codeGenType || '-' }}</strong>
+          <strong>{{ app?.codeGenType ? formatCodeGenType(app.codeGenType) : '-' }}</strong>
         </div>
         <div class="edit-meta-card__item">
           <span>创建时间</span>

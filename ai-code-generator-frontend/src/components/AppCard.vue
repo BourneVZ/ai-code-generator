@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 
+import CodeGenTypeTag from '@/components/CodeGenTypeTag.vue'
 import { FEATURED_PRIORITY } from '@/constants/app'
 import {
   formatRelativeTime,
@@ -9,7 +10,6 @@ import {
   getAppName,
   getAppOwnerName,
   getAppPreviewUrl,
-  getCodeGenTypeLabel,
   hasGeneratedContent,
 } from '@/utils/app'
 
@@ -66,7 +66,7 @@ const deleteApp = (event: MouseEvent) => {
       <div class="app-card__mask" />
 
       <div class="app-card__badges">
-        <a-tag color="blue">{{ getCodeGenTypeLabel(app.codeGenType) }}</a-tag>
+        <CodeGenTypeTag :type="app.codeGenType" />
         <a-tag v-if="isFeatured" color="gold">精选</a-tag>
       </div>
 

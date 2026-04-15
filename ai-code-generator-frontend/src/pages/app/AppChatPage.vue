@@ -20,8 +20,9 @@ import {
 import { listAppChatHistoryByPage } from '@/api/chatHistoryController'
 import AppDetailModal from '@/components/AppDetailModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
-import { API_BASE_URL, DEPLOY_DOMAIN } from '@/constants/app'
+import { API_BASE_URL, getDeployUrl } from '@/config/env'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { formatCodeGenType } from '@/utils/codeGenTypes'
 import {
   asApiLong,
   canOperateApp,
@@ -30,7 +31,6 @@ import {
   getAppName,
   getAppDeployUrl,
   getAppPreviewUrl,
-  getCodeGenTypeLabel,
   hasGeneratedContent,
   hasValidId,
   isAdmin,
@@ -105,17 +105,6 @@ const previewStatusText = computed(() => {
   }
   return hasGeneratedPreview.value ? '已生成' : '等待生成'
 })
-
-function buildDeployUrl(value?: string) {
-  const trimmed = value?.trim()
-  if (!trimmed) {
-    return ''
-  }
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed.replace(/\/?$/, '/')
-  }
-  return `${DEPLOY_DOMAIN}/${trimmed.replace(/^\/+|\/+$/g, '')}/`
-}
 
 function createMessage(role: ChatMessage['role'], content: string, status?: ChatMessage['status']): ChatMessage {
   return {
@@ -462,7 +451,7 @@ async function handleDeployConfirm() {
   try {
     const response = await deployApp({ appId: asApiLong(currentAppId) })
     if (response.data.code === 0 && response.data.data) {
-      deployResponseUrl.value = buildDeployUrl(response.data.data)
+      deployResponseUrl.value = getDeployUrl(response.data.data)
       await fetchAppDetail()
       deployPopoverOpen.value = true
       message.success(wasDeployed ? '重新部署成功' : '部署成功')
@@ -562,7 +551,7 @@ onBeforeUnmount(() => {
         <h1 class="chat-page__title">{{ appName }}</h1>
         <p class="chat-page__meta">
           <span v-if="app?.createTime">创建于 {{ formatDateTime(app.createTime) }}</span>
-          <span v-if="app?.codeGenType">{{ getCodeGenTypeLabel(app.codeGenType) }}</span>
+          <span v-if="app?.codeGenType">{{ formatCodeGenType(app.codeGenType) }}</span>
           <span v-if="!canEditCurrentApp">只读预览</span>
         </p>
       </div>

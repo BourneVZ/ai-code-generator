@@ -1,4 +1,4 @@
-import { DEPLOY_DOMAIN, STATIC_RESOURCE_BASE_URL } from '@/constants/app'
+import { getDeployUrl, getStaticPreviewUrl } from '@/config/env'
 
 type SafeId = string | number
 
@@ -65,7 +65,7 @@ export function getAppPreviewUrl(app?: Pick<API.AppVO, 'id' | 'codeGenType'> | n
   if (!appId || !codeGenType) {
     return ''
   }
-  return `${STATIC_RESOURCE_BASE_URL}/static/${codeGenType}_${appId}/`
+  return getStaticPreviewUrl(codeGenType, appId)
 }
 
 export function getAppDeployUrl(app?: Pick<API.AppVO, 'deployKey'> | null) {
@@ -73,7 +73,7 @@ export function getAppDeployUrl(app?: Pick<API.AppVO, 'deployKey'> | null) {
   if (!deployKey) {
     return ''
   }
-  return `${DEPLOY_DOMAIN}/${deployKey}/`
+  return getDeployUrl(deployKey)
 }
 
 export function hasGeneratedContent(
@@ -108,10 +108,12 @@ export function formatDateTime(value?: string) {
   if (!value) {
     return '暂无'
   }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
   }
+
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -160,16 +162,6 @@ export function formatRelativeTime(value?: string) {
 
   const years = Math.floor(months / 12)
   return `${years} 年前`
-}
-
-export function getCodeGenTypeLabel(codeGenType?: string) {
-  if (codeGenType === 'html') {
-    return 'HTML'
-  }
-  if (codeGenType === 'multi_file') {
-    return '多文件'
-  }
-  return codeGenType || '未知类型'
 }
 
 export function sanitizeAppQueryRequest(query: API.AppQueryRequest): API.AppQueryRequest {

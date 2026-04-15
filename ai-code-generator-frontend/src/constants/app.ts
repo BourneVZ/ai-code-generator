@@ -1,15 +1,3 @@
-const DEFAULT_API_BASE_URL = 'http://localhost:8123/api'
-const DEFAULT_DEPLOY_DOMAIN = 'http://localhost'
-
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, '')
-}
-
-export const API_BASE_URL = trimTrailingSlash(import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL)
-export const DEPLOY_DOMAIN = trimTrailingSlash(import.meta.env.VITE_DEPLOY_DOMAIN || DEFAULT_DEPLOY_DOMAIN)
-export const STATIC_RESOURCE_BASE_URL = trimTrailingSlash(import.meta.env.VITE_STATIC_BASE_URL || API_BASE_URL)
-
-export const DEFAULT_CODE_GEN_TYPE = 'multi_file'
 export const FEATURED_PRIORITY = 99
 export const MY_APP_PAGE_SIZE = 8
 export const FEATURED_APP_PAGE_SIZE = 8
@@ -26,7 +14,7 @@ export const QUICK_PROMPTS = [
   },
   {
     label: '个人博客',
-    prompt: '帮我制作一个个人博客网站，包含文章列表、文章详情、作者介绍和归档页，风格清爽有质感。',
+    prompt: '帮我制作一个个人博客网站，包含文章列表、文章详情、作者介绍和归档页面，风格清爽有质感。',
   },
   {
     label: '活动报名',

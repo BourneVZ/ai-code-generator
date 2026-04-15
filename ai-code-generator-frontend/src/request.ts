@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 
-import { API_BASE_URL } from '@/constants/app'
+import { API_BASE_URL } from '@/config/env'
 
 const myAxios = axios.create({
   baseURL: API_BASE_URL,
