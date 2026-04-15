@@ -5,10 +5,12 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.bvz.aicodegenerator.ai.model.message.*;
+import com.bvz.aicodegenerator.constant.AppConstant;
+import com.bvz.aicodegenerator.core.builder.VueProjectBuilder;
 import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.service.ChatHistoryService;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 import java.util.HashSet;
@@ -20,6 +22,9 @@ import java.util.Set;
  */
 @Slf4j
 public class JsonMessageStreamHandler {
+
+    @Resource
+    private VueProjectBuilder vueProjectBuilder;
 
     /**
      * 处理 TokenStream（VUE_PROJECT）
@@ -44,6 +49,14 @@ public class JsonMessageStreamHandler {
                     return handleJsonMessageChunk(chunk, chatHistoryStringBuilder, seenToolIds);
                 })
                 .filter(StrUtil::isNotEmpty) // 过滤空字串
+                .doOnComplete(() -> {
+                    // 流式响应完成后，添加 AI 消息到对话历史
+                    String aiResponse = chatHistoryStringBuilder.toString();
+                    saveAiMessageSafely(chatHistoryService, appId, loginUser.getId(), aiResponse);
+                    // 异步构造 Vue 项目
+                    String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
+                    vueProjectBuilder.buildProjectAsync(projectPath);
+                })
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
                     String aiResponse = chatHistoryStringBuilder.toString();
