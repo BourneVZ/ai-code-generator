@@ -1,5 +1,6 @@
 package com.bvz.aicodegenerator.core;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.bvz.aicodegenerator.ai.AiCodeGeneratorService;
 import com.bvz.aicodegenerator.ai.AiCodeGeneratorServiceFactory;
@@ -176,6 +177,7 @@ public class AiCodeGeneratorFacade {
     private Flux<String> processCodeStream(Flux<String> codeStream, CodeGenTypeEnum codeGenType, Long appId) {
         // 当流式返回生成代码完成后，再保存代码
         StringBuilder codeBuilder = new StringBuilder();
+        AtomicBoolean codeSaved = new AtomicBoolean(false);
         return codeStream
                 .doOnNext(chunk -> {
                     // 实时收集代码片段
@@ -183,16 +185,49 @@ public class AiCodeGeneratorFacade {
                 })
                 .doOnComplete(() -> {
                     // 流式返回完成后保存代码
+                    if (codeSaved.get()) {
+                        return;
+                    }
                     try {
                         String completeCode = codeBuilder.toString();
+                        // 判断内容是否为有效代码（包含代码块标记或明显的代码特征）
+                        if (!isValidCodeContent(completeCode, codeGenType)) {
+                            log.info("AI回复不包含有效代码内容，跳过保存. appId={}", appId);
+                            return;
+                        }
                         // 使用执行器解析代码
                         Object codeResult = CodeParserExecutor.executeParser(completeCode, codeGenType);
                         // 使用执行器保存代码
                         File savedDir = CodeFileSaverExecutor.executeSaver(codeResult, codeGenType, appId);
                         log.info("保存成功，路径为：" + savedDir.getAbsolutePath());
+                        codeSaved.set(true);
                     } catch (Exception e) {
                         log.error("保存失败: {}", e.getMessage());
                     }
                 });
+    }
+
+    /**
+     * 判断内容是否为有效代码
+     */
+    private boolean isValidCodeContent(String content, CodeGenTypeEnum codeGenType) {
+        if (StrUtil.isBlank(content)) {
+            return false;
+        }
+        String trimmed = content.trim();
+        // 排除纯中文内容（很可能是AI的文本回复）
+        if (trimmed.matches("^[\\u4e00-\\u9fa5]+$")) {
+            return false;
+        }
+        switch (codeGenType) {
+            case HTML:
+                // HTML需要有代码块标记 ```html 或包含 <html 等标签
+                return trimmed.contains("```html") || trimmed.contains("<html") || trimmed.contains("<!DOCTYPE");
+            case MULTI_FILE:
+                // 多文件需要有代码块标记
+                return trimmed.contains("```html") || trimmed.contains("```css") || trimmed.contains("```js");
+            default:
+                return true;
+        }
     }
 }

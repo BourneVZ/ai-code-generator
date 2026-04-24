@@ -77,12 +77,18 @@ export function getAppDeployUrl(app?: Pick<API.AppVO, 'deployKey'> | null) {
 }
 
 export function hasGeneratedContent(
-  app?: Pick<API.AppVO, 'id' | 'codeGenType' | 'cover' | 'deployKey' | 'deployedTime' | 'createTime' | 'updateTime'> | null,
+  app?: Pick<API.AppVO, 'id' | 'codeGenType' | 'cover' | 'deployKey' | 'deployedTime' | 'createTime' | 'updateTime' | 'hasGeneratedPreview'> | null,
 ) {
   if (!hasValidId(app?.id) || !app?.codeGenType?.trim()) {
     return false
   }
 
+  // 直接使用后端标记的 hasGeneratedPreview 字段
+  if (app?.hasGeneratedPreview === 1) {
+    return true
+  }
+
+  // 兼容旧逻辑：如果有部署信息或截图，也认为已生成
   if (trimUrlSegment(app?.deployKey)) {
     return true
   }
@@ -91,9 +97,7 @@ export function hasGeneratedContent(
     return true
   }
 
-  const createdAt = toTimestamp(app?.createTime)
-  const updatedAt = toTimestamp(app?.updateTime)
-  return !Number.isNaN(createdAt) && !Number.isNaN(updatedAt) && updatedAt > createdAt
+  return false
 }
 
 export function buildAppName(prompt: string) {

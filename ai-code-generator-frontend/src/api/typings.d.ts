@@ -50,6 +50,7 @@ declare namespace API {
     createTime?: string
     updateTime?: string
     user?: UserVO
+    hasGeneratedPreview?: number
   }
 
   type BaseResponseAppVO = {
@@ -157,6 +158,10 @@ declare namespace API {
 
   type DeleteRequest = {
     id?: number
+  }
+
+  type downloadAppCodeParams = {
+    appId: number
   }
 
   type getAppVOByIdByAdminParams = {

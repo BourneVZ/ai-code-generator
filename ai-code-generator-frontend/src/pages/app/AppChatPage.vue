@@ -8,6 +8,7 @@ import {
   ExportOutlined,
   InfoCircleOutlined,
   SendOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons-vue'
 
 import {
@@ -82,19 +83,29 @@ const appId = computed(() => String(route.params.id ?? ''))
 const appIdForApi = computed(() => asApiLong(appId.value))
 const appName = computed(() => getAppName(app.value))
 const isAppOwner = computed(
-  () => normalizeId(loginUserStore.loginUser.id) !== '' && normalizeId(loginUserStore.loginUser.id) === normalizeId(app.value?.userId),
+  () =>
+    normalizeId(loginUserStore.loginUser.id) !== '' &&
+    normalizeId(loginUserStore.loginUser.id) === normalizeId(app.value?.userId),
 )
 const canEditCurrentApp = computed(() => isAppOwner.value)
 const isCurrentUserAdmin = computed(() => isAdmin(loginUserStore.loginUser))
 const canManageCurrentApp = computed(() => canOperateApp(loginUserStore.loginUser, app.value))
 const previewBaseUrl = computed(() => getAppPreviewUrl(app.value))
 const hasGeneratedPreview = computed(() => hasGeneratedContent(app.value))
-const canRenderPreview = computed(() => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewLoaded.value))
+const hasPreviewUrl = computed(() => Boolean(previewBaseUrl.value))
+const canRenderPreview = computed(
+  () => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewLoaded.value),
+)
 const hasRenderableAssistantMessage = computed(() =>
-  messages.value.some((item) => item.role === 'assistant' && item.status !== 'error' && item.content.trim().length > 0),
+  messages.value.some(
+    (item) =>
+      item.role === 'assistant' && item.status !== 'error' && item.content.trim().length > 0,
+  ),
 )
 const shouldShowPreview = computed(
-  () => Boolean(previewBaseUrl.value) && (hasGeneratedPreview.value || previewReady.value || hasRenderableAssistantMessage.value),
+  () =>
+    Boolean(previewBaseUrl.value) &&
+    (hasGeneratedPreview.value || previewReady.value || (previewLoaded.value && hasRenderableAssistantMessage.value)),
 )
 const previewUrl = computed(() => {
   if (!canRenderPreview.value || !previewBaseUrl.value) {
@@ -122,7 +133,11 @@ const previewStatusLabel = computed(() => {
   return '等待生成'
 })
 
-function createMessage(role: ChatMessage['role'], content: string, status?: ChatMessage['status']): ChatMessage {
+function createMessage(
+  role: ChatMessage['role'],
+  content: string,
+  status?: ChatMessage['status'],
+): ChatMessage {
   return {
     id: `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
@@ -153,14 +168,18 @@ function transformHistoryMessage(record: API.ChatHistoryVO): ChatMessage {
   }
 }
 
-function mergeMessages(nextMessages: ChatMessage[], mode: 'replace' | 'prepend' | 'append' = 'replace') {
+function mergeMessages(
+  nextMessages: ChatMessage[],
+  mode: 'replace' | 'prepend' | 'append' = 'replace',
+) {
   if (mode === 'replace') {
     messages.value = nextMessages
     return
   }
 
   const seen = new Set<string>()
-  const merged = mode === 'prepend' ? [...nextMessages, ...messages.value] : [...messages.value, ...nextMessages]
+  const merged =
+    mode === 'prepend' ? [...nextMessages, ...messages.value] : [...messages.value, ...nextMessages]
   messages.value = merged.filter((item) => {
     if (seen.has(item.id)) {
       return false
@@ -303,7 +322,12 @@ async function fetchChatHistory(loadMore = false) {
 }
 
 async function maybeAutoSendInitialMessage() {
-  if (autoInitAttempted.value || !canEditCurrentApp.value || messages.value.length > 0 || isGenerating.value) {
+  if (
+    autoInitAttempted.value ||
+    !canEditCurrentApp.value ||
+    messages.value.length > 0 ||
+    isGenerating.value
+  ) {
     return
   }
 
@@ -362,9 +386,7 @@ function parseSsePayload(payload: string): string {
   } catch {
     const matchedChunks = Array.from(normalizedPayload.matchAll(/"d"\s*:\s*"((?:\\.|[^"\\])*)"/g))
     if (matchedChunks.length) {
-      return matchedChunks
-        .map(([, chunk]) => JSON.parse(`"${chunk}"`) as string)
-        .join('')
+      return matchedChunks.map(([, chunk]) => JSON.parse(`"${chunk}"`) as string).join('')
     }
     return normalizedPayload
   }
@@ -409,7 +431,8 @@ function failGeneration(content = '生成中断，请稍后重试。') {
 
 async function recoverGenerationFromStreamClosure() {
   const lastMessage = messages.value.at(-1)
-  const hasAssistantContent = lastMessage?.role === 'assistant' && lastMessage.content.trim().length > 0
+  const hasAssistantContent =
+    lastMessage?.role === 'assistant' && lastMessage.content.trim().length > 0
 
   try {
     await fetchAppDetail()
@@ -613,16 +636,70 @@ function handlePreviewLoad() {
   previewLoaded.value = true
 }
 
-watch(
-  [() => previewBaseUrl.value, () => hasGeneratedPreview.value],
-  ([baseUrl, generated]) => {
-    if (baseUrl && generated) {
-      previewVersion.value = Date.now()
-      previewLoaded.value = true
-      clearPreviewRefreshTimer()
+// 下载相关
+const downloading = ref(false)
+
+// 下载代码
+const downloadCode = async () => {
+  if (!appId.value) {
+    message.error('应用ID不存在')
+    return
+  }
+  downloading.value = true
+  try {
+    const url = `${API_BASE_URL}/app/download/${appId.value}`
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      throw new Error(`下载失败: ${response.status}`)
     }
-  },
-)
+    // 校验响应是否为 ZIP 文件，防止后端返回 JSON 错误时被当作 ZIP 保存
+    const contentType = response.headers.get('Content-Type') || ''
+    if (!contentType.includes('application/zip')) {
+      const text = await response.text()
+      let errorMsg = '服务器未返回 ZIP 文件'
+      try {
+        const json = JSON.parse(text)
+        errorMsg = json.message || errorMsg
+      } catch (_) {
+        // not JSON, use text
+        if (text) errorMsg = text
+      }
+      throw new Error(errorMsg)
+    }
+    // 获取文件名
+    const contentDisposition = response.headers.get('Content-Disposition')
+    const fileName = contentDisposition?.match(/filename="(.+)"/)?.[1] || `app-${appId.value}.zip`
+    // 下载文件
+    const blob = await response.blob()
+    if (blob.size === 0) {
+      throw new Error('下载的文件为空')
+    }
+    const downloadUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = fileName
+    link.click()
+    // 清理
+    URL.revokeObjectURL(downloadUrl)
+    message.success('代码下载成功')
+  } catch (error) {
+    console.error('下载失败：', error)
+    message.error(error instanceof Error ? error.message : '下载失败，请重试')
+  } finally {
+    downloading.value = false
+  }
+}
+
+watch([() => previewBaseUrl.value, () => hasGeneratedPreview.value], ([baseUrl, generated]) => {
+  if (baseUrl && generated) {
+    previewVersion.value = Date.now()
+    previewLoaded.value = true
+    clearPreviewRefreshTimer()
+  }
+})
 
 onMounted(async () => {
   await fetchAppDetail()
@@ -655,6 +732,18 @@ onBeforeUnmount(() => {
             <InfoCircleOutlined />
           </template>
           应用详情
+        </a-button>
+        <a-button
+          type="primary"
+          @click="downloadCode"
+          :loading="downloading"
+          :disabled="!isAppOwner || !hasGeneratedPreview"
+          v-if="hasGeneratedPreview"
+        >
+          <template #icon>
+            <DownloadOutlined />
+          </template>
+          下载代码
         </a-button>
 
         <a-popover
@@ -692,7 +781,11 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <p class="deploy-card__meta">
-                  {{ deployUpdatedAt ? `${formatRelativeTime(deployUpdatedAt)} 更新` : '已生成可访问链接' }}
+                  {{
+                    deployUpdatedAt
+                      ? `${formatRelativeTime(deployUpdatedAt)} 更新`
+                      : '已生成可访问链接'
+                  }}
                 </p>
               </template>
 
@@ -716,8 +809,13 @@ onBeforeUnmount(() => {
       <section class="chat-panel">
         <div ref="messagesContainerRef" class="chat-panel__messages">
           <a-spin :spinning="loading || historyLoading">
-            <div v-if="historyHasMore || historyLoadMoreLoading" class="chat-panel__history-actions">
-              <a-button :loading="historyLoadMoreLoading" @click="handleLoadMoreHistory">加载更多</a-button>
+            <div
+              v-if="historyHasMore || historyLoadMoreLoading"
+              class="chat-panel__history-actions"
+            >
+              <a-button :loading="historyLoadMoreLoading" @click="handleLoadMoreHistory"
+                >加载更多</a-button
+              >
             </div>
 
             <template v-if="messages.length">
@@ -767,7 +865,12 @@ onBeforeUnmount(() => {
             <span class="chat-panel__tip">
               {{ canEditCurrentApp ? '描述越具体，生成结果会越稳定。' : READONLY_CHAT_TOOLTIP }}
             </span>
-            <a-button type="primary" :loading="isGenerating" :disabled="!canEditCurrentApp" @click="handleSend">
+            <a-button
+              type="primary"
+              :loading="isGenerating"
+              :disabled="!canEditCurrentApp"
+              @click="handleSend"
+            >
               <template #icon>
                 <SendOutlined />
               </template>
@@ -781,7 +884,12 @@ onBeforeUnmount(() => {
         <div class="preview-panel__header">
           <div class="preview-panel__heading">
             <h2 class="preview-panel__title">生成预览</h2>
-            <span class="preview-panel__status" :class="{ 'is-ready': previewReady || hasGeneratedPreview || previewLoaded || isGenerating }">
+            <span
+              class="preview-panel__status"
+              :class="{
+                'is-ready': previewReady || hasGeneratedPreview || previewLoaded || isGenerating,
+              }"
+            >
               {{ previewStatusLabel }}
             </span>
           </div>
@@ -791,8 +899,17 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="preview-panel__body">
-          <iframe v-if="previewUrl" :src="previewUrl" class="preview-panel__iframe" title="网页预览" @load="handlePreviewLoad" />
-          <div v-else-if="isGenerating || shouldShowPreview" class="preview-panel__placeholder preview-panel__placeholder--loading">
+          <iframe
+            v-if="previewUrl"
+            :src="previewUrl"
+            class="preview-panel__iframe"
+            title="网页预览"
+            @load="handlePreviewLoad"
+          />
+          <div
+            v-else-if="isGenerating || shouldShowPreview"
+            class="preview-panel__placeholder preview-panel__placeholder--loading"
+          >
             <a-spin />
             <p>{{ isGenerating ? '正在生成网页，请稍候...' : '生成已完成，正在刷新预览...' }}</p>
           </div>

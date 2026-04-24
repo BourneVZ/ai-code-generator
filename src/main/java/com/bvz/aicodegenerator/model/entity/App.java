@@ -105,4 +105,10 @@ public class App implements Serializable {
     @Column(value = "isDelete", isLogicDelete = true)
     private Integer isDelete;
 
+    /**
+     * 是否已生成预览代码
+     */
+    @Column("hasGeneratedPreview")
+    private Integer hasGeneratedPreview;
+
 }

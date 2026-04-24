@@ -42,6 +42,7 @@ create table if not exists app
     createTime   datetime default CURRENT_TIMESTAMP not null comment '创建时间',
     updateTime   datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
     isDelete     tinyint  default 0                 not null comment '是否删除',
+    hasGeneratedPreview  tinyint  default 0                 not null comment '是否已生成预览代码',
     UNIQUE KEY uk_deployKey (deployKey),
     INDEX idx_appName (appName),
     INDEX idx_userId (userId)
@@ -65,3 +66,5 @@ create table if not exists chat_history
     INDEX idx_appId_createTime (appId, createTime),
     INDEX idx_appId_id (appId, id)
 ) comment '对话历史' collate = utf8mb4_unicode_ci;
+
+ALTER TABLE app ADD COLUMN hasGeneratedPreview tinyint DEFAULT 0 NOT NULL COMMENT '是否已生成预览代码';

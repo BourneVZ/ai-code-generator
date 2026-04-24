@@ -93,9 +93,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
 
         // 7. 收集 AI 响应内容并在完成后记录到对话历史
-        return streamHandlerExecutor
+        Flux<String> resultFlux = streamHandlerExecutor
                 .doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
                 .onErrorResume(error -> Flux.just(buildStreamErrorMessage(codeGenTypeEnum, error)));
+
+        // 8. 在流完成后更新 hasGeneratedPreview 标记
+        return resultFlux
+                .doOnComplete(() -> {
+                    try {
+                        App updateApp = new App();
+                        updateApp.setId(appId);
+                        updateApp.setHasGeneratedPreview(1);
+                        this.updateById(updateApp);
+                        log.info("更新应用 hasGeneratedPreview 标记成功, appId={}", appId);
+                    } catch (Exception e) {
+                        log.error("更新 hasGeneratedPreview 标记失败, appId={}", appId, e);
+                    }
+                });
     }
 
     @Override

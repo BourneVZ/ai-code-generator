@@ -68,5 +68,10 @@ public class AppVO implements Serializable {
      */
     private UserVO user;
 
+    /**
+     * 是否已生成预览代码
+     */
+    private Integer hasGeneratedPreview;
+
     private static final long serialVersionUID = 1L;
 }
