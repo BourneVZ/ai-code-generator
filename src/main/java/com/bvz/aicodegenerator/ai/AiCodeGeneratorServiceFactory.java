@@ -1,6 +1,6 @@
 package com.bvz.aicodegenerator.ai;
 
-import com.bvz.aicodegenerator.ai.tools.FileWriteTool;
+import com.bvz.aicodegenerator.ai.tools.*;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
@@ -43,6 +43,9 @@ public class AiCodeGeneratorServiceFactory {
     @Resource
     private ChatHistoryService chatHistoryService;
 
+    @Resource
+    private ToolManager toolManager;
+
 
     /**
      * 根据 appId 获取服务（带缓存） 这个方法是为了兼容历史逻辑
@@ -79,7 +82,7 @@ public class AiCodeGeneratorServiceFactory {
             case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
                     .chatMemoryProvider(memoryId -> chatMemory)
-                    .tools(new FileWriteTool())
+                    .tools(toolManager.getAllTools())
                     // 处理工具调用幻觉问题
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                             toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()

@@ -1,6 +1,10 @@
 ### CUSTOM ###
-yupi_ref
 .claude
+CLAUDE.md 
+
+.env
+.env.*
+!.env.example
 
 # Logs
 logs

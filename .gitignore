@@ -5,7 +5,12 @@ tmp
 .claude
 CLAUDE.md
 
-HELP.md
+### OS ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
