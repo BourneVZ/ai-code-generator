@@ -6,6 +6,7 @@ import {
   CloudUploadOutlined,
   CopyOutlined,
   ExportOutlined,
+  HighlightOutlined,
   InfoCircleOutlined,
   SendOutlined,
   DownloadOutlined,
@@ -21,6 +22,7 @@ import {
 import { listAppChatHistoryByPage } from '@/api/chatHistoryController'
 import AppDetailModal from '@/components/AppDetailModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import VisualEditBar from '@/components/VisualEditBar.vue'
 import { API_BASE_URL, getDeployUrl } from '@/config/env'
 import { useLoginUserStore } from '@/stores/loginUser'
 import { formatCodeGenType } from '@/utils/codeGenTypes'
@@ -37,6 +39,14 @@ import {
   isAdmin,
   normalizeId,
 } from '@/utils/app'
+import {
+  injectVisualEditor,
+  removeVisualEditor,
+  createVisualEditorMessageHandler,
+  deselectElementInIframe,
+  formatElementsForPrompt,
+  type SelectedElementInfo,
+} from '@/utils/visualEditor'
 
 type ChatMessage = {
   id: string
@@ -73,8 +83,13 @@ const autoInitAttempted = ref(false)
 const previewReady = ref(false)
 const previewLoaded = ref(false)
 
+const isEditMode = ref(false)
+const selectedElements = ref<SelectedElementInfo[]>([])
+const iframeRef = ref<HTMLIFrameElement>()
+
 let activeEventSource: EventSource | null = null
 let previewRefreshTimer: number | null = null
+let visualEditorMsgHandler: ((event: MessageEvent) => void) | null = null
 
 const PREVIEW_REFRESH_INTERVAL = 2000
 const PREVIEW_REFRESH_LIMIT = 60
@@ -450,7 +465,7 @@ function startSseGeneration(content: string) {
     return
   }
 
-  const url = new URL(`${API_BASE_URL}/app/chat/gen/code`)
+  const url = new URL(`${API_BASE_URL}/app/chat/gen/code`, window.location.origin)
   url.searchParams.set('appId', currentAppId)
   url.searchParams.set('message', content)
 
@@ -524,13 +539,21 @@ async function sendMessage(content: string) {
   previewLoaded.value = false
   clearPreviewRefreshTimer()
 
+  const finalContent =
+    selectedElements.value.length > 0
+      ? trimmedContent + formatElementsForPrompt(selectedElements.value)
+      : trimmedContent
+
+  selectedElements.value = []
+  exitEditMode()
+
   const userMessage = createMessage('user', trimmedContent)
   const assistantMessage = createMessage('assistant', '', 'streaming')
   mergeMessages([userMessage, assistantMessage], 'append')
   scrollToBottom()
 
   try {
-    startSseGeneration(trimmedContent)
+    startSseGeneration(finalContent)
   } catch (error) {
     failGeneration()
     message.error((error as Error).message || '生成失败')
@@ -634,6 +657,51 @@ async function handleDeleteApp() {
 
 function handlePreviewLoad() {
   previewLoaded.value = true
+  if (isEditMode.value) {
+    tryInjectVisualEditor()
+  }
+}
+
+// --- 可视化编辑 ---
+
+function tryInjectVisualEditor() {
+  if (!iframeRef.value || !isEditMode.value) return
+  injectVisualEditor(iframeRef.value)
+}
+
+function handleVisualEditorMessage(
+  element: SelectedElementInfo,
+  action: 'select' | 'deselect',
+) {
+  if (action === 'select') {
+    const exists = selectedElements.value.some(
+      (el) => el.selectorPath === element.selectorPath,
+    )
+    if (!exists) {
+      selectedElements.value = [...selectedElements.value, element]
+    }
+  } else {
+    selectedElements.value = selectedElements.value.filter(
+      (el) => el.selectorPath !== element.selectorPath,
+    )
+  }
+}
+
+function removeSelectedElement(uid: string) {
+  const el = selectedElements.value.find((e) => e.uid === uid)
+  if (el && iframeRef.value) {
+    deselectElementInIframe(iframeRef.value, el.selectorPath)
+  }
+  selectedElements.value = selectedElements.value.filter((e) => e.uid !== uid)
+}
+
+function toggleEditMode() {
+  isEditMode.value = !isEditMode.value
+}
+
+function exitEditMode() {
+  if (!isEditMode.value) return
+  isEditMode.value = false
 }
 
 // 下载相关
@@ -693,6 +761,23 @@ const downloadCode = async () => {
   }
 }
 
+watch(isEditMode, (val) => {
+  if (val) {
+    visualEditorMsgHandler = createVisualEditorMessageHandler(handleVisualEditorMessage)
+    window.addEventListener('message', visualEditorMsgHandler)
+    tryInjectVisualEditor()
+  } else {
+    if (visualEditorMsgHandler) {
+      window.removeEventListener('message', visualEditorMsgHandler)
+      visualEditorMsgHandler = null
+    }
+    if (iframeRef.value) {
+      removeVisualEditor(iframeRef.value)
+    }
+    selectedElements.value = []
+  }
+})
+
 watch([() => previewBaseUrl.value, () => hasGeneratedPreview.value], ([baseUrl, generated]) => {
   if (baseUrl && generated) {
     previewVersion.value = Date.now()
@@ -710,6 +795,13 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearPreviewRefreshTimer()
   closeActiveEventSource()
+  if (visualEditorMsgHandler) {
+    window.removeEventListener('message', visualEditorMsgHandler)
+    visualEditorMsgHandler = null
+  }
+  if (iframeRef.value) {
+    removeVisualEditor(iframeRef.value)
+  }
 })
 </script>
 
@@ -843,6 +935,11 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="chat-panel__composer">
+          <VisualEditBar
+            v-if="isEditMode"
+            :elements="selectedElements"
+            @remove="removeSelectedElement"
+          />
           <a-tooltip v-if="!canEditCurrentApp" :title="READONLY_CHAT_TOOLTIP">
             <div class="chat-panel__composer-disabled-wrap">
               <a-textarea
@@ -865,17 +962,29 @@ onBeforeUnmount(() => {
             <span class="chat-panel__tip">
               {{ canEditCurrentApp ? '描述越具体，生成结果会越稳定。' : READONLY_CHAT_TOOLTIP }}
             </span>
-            <a-button
-              type="primary"
-              :loading="isGenerating"
-              :disabled="!canEditCurrentApp"
-              @click="handleSend"
-            >
-              <template #icon>
-                <SendOutlined />
-              </template>
-              发送
-            </a-button>
+            <div class="chat-panel__composer-actions">
+              <a-button
+                :type="isEditMode ? 'primary' : 'default'"
+                :disabled="!canEditCurrentApp || isGenerating"
+                @click="toggleEditMode"
+              >
+                <template #icon>
+                  <HighlightOutlined />
+                </template>
+                {{ isEditMode ? '退出编辑' : '编辑元素' }}
+              </a-button>
+              <a-button
+                type="primary"
+                :loading="isGenerating"
+                :disabled="!canEditCurrentApp"
+                @click="handleSend"
+              >
+                <template #icon>
+                  <SendOutlined />
+                </template>
+                发送
+              </a-button>
+            </div>
           </div>
         </div>
       </section>
@@ -901,6 +1010,7 @@ onBeforeUnmount(() => {
         <div class="preview-panel__body">
           <iframe
             v-if="previewUrl"
+            ref="iframeRef"
             :src="previewUrl"
             class="preview-panel__iframe"
             title="网页预览"
@@ -1090,6 +1200,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.chat-panel__composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .chat-panel__tip {
