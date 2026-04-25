@@ -2,6 +2,8 @@
 src/main/java/com/bvz/aicodegenerator/genresult
 src/main/resources/application-local.yml
 tmp
+.claude
+CLAUDE.md
 
 HELP.md
 target/

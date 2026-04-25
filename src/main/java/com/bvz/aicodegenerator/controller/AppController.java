@@ -3,6 +3,7 @@ package com.bvz.aicodegenerator.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
+import com.bvz.aicodegenerator.ai.AiCodeGenTypeRoutingService;
 import com.bvz.aicodegenerator.annotation.AuthCheck;
 import com.bvz.aicodegenerator.common.BaseResponse;
 import com.bvz.aicodegenerator.common.DeleteRequest;
@@ -54,6 +55,7 @@ public class AppController {
 
     @Resource
     private ProjectDownloadService projectDownloadService;
+
 
     /**
      * 应用聊天生成代码（流式 SSE）
@@ -161,24 +163,10 @@ public class AppController {
         ThrowUtils.throwIf(appAddRequest == null, ErrorCode.PARAMS_ERROR);
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
-        // 构造入库对象
-        App app = new App();
-        BeanUtil.copyProperties(appAddRequest, app);
-        app.setUserId(loginUser.getId());
-        if (StrUtil.isBlank(app.getAppName())) {
-            app.setAppName("未命名应用");
-        }
-        // 默认使用多文件生成
-        if (StrUtil.isBlank(app.getCodeGenType())) {
-            app.setCodeGenType(CodeGenTypeEnum.MULTI_FILE.getValue());
-        }
-        // 参数校验
-        appService.validApp(app, true);
-        // 插入数据库
-        boolean result = appService.save(app);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        return ResultUtils.success(app.getId());
+        Long appId = appService.createApp(appAddRequest, loginUser);
+        return ResultUtils.success(appId);
     }
+
 
     /**
      * 用户修改自己的应用，目前仅支持修改应用名称

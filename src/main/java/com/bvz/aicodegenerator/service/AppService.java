@@ -1,5 +1,6 @@
 package com.bvz.aicodegenerator.service;
 
+import com.bvz.aicodegenerator.model.dto.app.AppAddRequest;
 import com.bvz.aicodegenerator.model.dto.app.AppQueryRequest;
 import com.bvz.aicodegenerator.model.entity.App;
 import com.bvz.aicodegenerator.model.entity.User;
@@ -26,6 +27,15 @@ public interface AppService extends IService<App> {
      * @return 流式结果
      */
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
+    
+    /**
+     * 创建应用
+     *
+     * @param appAddRequest 应用添加请求
+     * @param loginUser     登录用户
+     * @return 应用 ID
+     */
+    Long createApp(AppAddRequest appAddRequest, User loginUser);
 
     /**
      * 应用部署

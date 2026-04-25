@@ -5,11 +5,9 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 
 import AppGallerySection from '@/components/AppGallerySection.vue'
-import CodeGenTypeSelector from '@/components/CodeGenTypeSelector.vue'
 import { addApp, deleteMyApp, listGoodAppVoByPage, listMyAppVoByPage } from '@/api/appController'
 import { FEATURED_APP_PAGE_SIZE, MY_APP_PAGE_SIZE, QUICK_PROMPTS } from '@/constants/app'
 import { useLoginUserStore } from '@/stores/loginUser'
-import { DEFAULT_CODE_GEN_TYPE } from '@/utils/codeGenTypes'
 import { buildAppName, getAppDeployUrl, sanitizeAppQueryRequest } from '@/utils/app'
 
 const router = useRouter()
@@ -17,7 +15,6 @@ const loginUserStore = useLoginUserStore()
 
 const creatorForm = reactive({
   prompt: '',
-  codeGenType: DEFAULT_CODE_GEN_TYPE,
 })
 
 const createLoading = ref(false)
@@ -94,7 +91,6 @@ const handleCreateApp = async () => {
     const response = await addApp({
       appName: buildAppName(prompt),
       initPrompt: prompt,
-      codeGenType: creatorForm.codeGenType,
     })
     if (response.data.code === 0 && response.data.data) {
       await router.push({
@@ -201,13 +197,6 @@ onMounted(() => {
             />
 
             <div class="prompt-composer__footer">
-              <CodeGenTypeSelector
-                v-model:value="creatorForm.codeGenType"
-                mode="radio"
-                button-style="solid"
-                size="small"
-              />
-
               <a-button type="primary" size="large" :loading="createLoading" @click="handleCreateApp">
                 <template #icon>
                   <PlusOutlined />
@@ -425,7 +414,7 @@ onMounted(() => {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 16px;
   margin-top: 8px;
   padding: 18px 0 0;
