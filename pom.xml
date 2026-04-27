@@ -87,6 +87,12 @@
             <artifactId>cos_api</artifactId>
             <version>5.6.227</version>
         </dependency>
+        <!-- 阿里云 DashScope SDK -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <version>2.21.1</version>
+        </dependency>
         <!-- Redis 客户端 Jedis 7.2.1 -->
         <dependency>
             <groupId>redis.clients</groupId>
@@ -98,6 +104,13 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
+        <!-- LangGraph4j -->
+        <dependency>
+            <groupId>org.bsc.langgraph4j</groupId>
+            <artifactId>langgraph4j-core</artifactId>
+            <version>1.6.0-rc2</version>
+        </dependency>
+
         <!-- 数据访问层依赖 -->
         <dependency>
             <groupId>com.mybatis-flex</groupId>
