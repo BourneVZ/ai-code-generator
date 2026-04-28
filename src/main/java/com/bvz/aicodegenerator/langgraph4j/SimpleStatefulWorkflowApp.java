@@ -17,7 +17,7 @@ import static org.bsc.langgraph4j.StateGraph.END;
 import static org.bsc.langgraph4j.StateGraph.START;
 
 /**
- * 简化版带状态定义的工作流 - 只定义状态结构，不实现具体流转
+ * 简化版网站生成工作流应用 - 带状态定义 - 不实现具体流转
  */
 @Slf4j
 public class SimpleStatefulWorkflowApp {

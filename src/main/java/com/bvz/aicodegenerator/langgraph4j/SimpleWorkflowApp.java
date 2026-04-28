@@ -16,7 +16,7 @@ import static org.bsc.langgraph4j.StateGraph.START;
 import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
 
 /**
- * 简化版网站生成工作流应用 - 使用 MessagesState
+ * 简化版网站生成工作流应用 - 无状态
  */
 @Slf4j
 public class SimpleWorkflowApp {
