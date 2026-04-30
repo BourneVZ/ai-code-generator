@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// =============================================================================
+// 1. Imports
+// =============================================================================
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -24,6 +27,7 @@ import AppDetailModal from '@/components/AppDetailModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import VisualEditBar from '@/components/VisualEditBar.vue'
 import { API_BASE_URL, getDeployUrl } from '@/config/env'
+import { useCodeGeneration } from '@/composables/useCodeGeneration'
 import { useLoginUserStore } from '@/stores/loginUser'
 import { formatCodeGenType } from '@/utils/codeGenTypes'
 import {
@@ -48,6 +52,10 @@ import {
   type SelectedElementInfo,
 } from '@/utils/visualEditor'
 
+// =============================================================================
+// 2. Types & Constants
+// =============================================================================
+
 type ChatMessage = {
   id: string
   role: 'user' | 'assistant'
@@ -58,41 +66,67 @@ type ChatMessage = {
 
 const READONLY_CHAT_TOOLTIP = '无法在别人的作品下继续对话哦'
 const CHAT_HISTORY_PAGE_SIZE = 10
+const PREVIEW_REFRESH_INTERVAL = 2000
+const PREVIEW_REFRESH_LIMIT = 60
+
+// =============================================================================
+// 3. Route & Stores
+// =============================================================================
 
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
 
+// =============================================================================
+// 4. Composable — SSE code-generation stream
+// =============================================================================
+
+const { isGenerating, start: startCodeGen, abort: abortCodeGen } =
+  useCodeGeneration(API_BASE_URL)
+
+// =============================================================================
+// 5. Reactive State
+// =============================================================================
+
+// -- App
 const app = ref<API.AppVO>()
 const loading = ref(true)
+
+// -- Messages & chat history
+const messages = ref<ChatMessage[]>([])
+const draftMessage = ref('')
+const messagesContainerRef = ref<HTMLElement>()
 const historyLoading = ref(false)
 const historyLoadMoreLoading = ref(false)
 const historyHasMore = ref(false)
 const nextHistoryCursor = ref<string>()
-const isGenerating = ref(false)
-const isDeploying = ref(false)
-const isDeleting = ref(false)
+
+// -- Preview
 const previewVersion = ref(Date.now())
-const deployPopoverOpen = ref(false)
-const deployResponseUrl = ref('')
-const draftMessage = ref('')
-const messages = ref<ChatMessage[]>([])
-const detailModalOpen = ref(false)
-const messagesContainerRef = ref<HTMLElement>()
-const autoInitAttempted = ref(false)
 const previewReady = ref(false)
 const previewLoaded = ref(false)
+let previewRefreshTimer: number | null = null
 
+// -- Deploy
+const isDeploying = ref(false)
+const isDeleting = ref(false)
+const deployPopoverOpen = ref(false)
+const deployResponseUrl = ref('')
+
+// -- Visual editor
 const isEditMode = ref(false)
 const selectedElements = ref<SelectedElementInfo[]>([])
 const iframeRef = ref<HTMLIFrameElement>()
-
-let activeEventSource: EventSource | null = null
-let previewRefreshTimer: number | null = null
 let visualEditorMsgHandler: ((event: MessageEvent) => void) | null = null
 
-const PREVIEW_REFRESH_INTERVAL = 2000
-const PREVIEW_REFRESH_LIMIT = 60
+// -- Misc
+const detailModalOpen = ref(false)
+const autoInitAttempted = ref(false)
+const downloading = ref(false)
+
+// =============================================================================
+// 6. Computed Properties
+// =============================================================================
 
 const appId = computed(() => String(route.params.id ?? ''))
 const appIdForApi = computed(() => asApiLong(appId.value))
@@ -120,33 +154,27 @@ const hasRenderableAssistantMessage = computed(() =>
 const shouldShowPreview = computed(
   () =>
     Boolean(previewBaseUrl.value) &&
-    (hasGeneratedPreview.value || previewReady.value || (previewLoaded.value && hasRenderableAssistantMessage.value)),
+    (hasGeneratedPreview.value ||
+      previewReady.value ||
+      (previewLoaded.value && hasRenderableAssistantMessage.value)),
 )
 const previewUrl = computed(() => {
-  if (!canRenderPreview.value || !previewBaseUrl.value) {
-    return ''
-  }
+  if (!canRenderPreview.value || !previewBaseUrl.value) return ''
   return `${previewBaseUrl.value}?t=${previewVersion.value}`
 })
 const deployWorkUrl = computed(() => getAppDeployUrl(app.value) || deployResponseUrl.value)
 const hasDeployWork = computed(() => Boolean(deployWorkUrl.value))
 const deployUpdatedAt = computed(() => app.value?.deployedTime || app.value?.updateTime || '')
-const previewStatusText = computed(() => {
-  if (isGenerating.value) {
-    return '生成中'
-  }
-  return hasGeneratedPreview.value ? '已生成' : '等待生成'
-})
 
 const previewStatusLabel = computed(() => {
-  if (isGenerating.value) {
-    return '生成中'
-  }
-  if (previewReady.value || hasGeneratedPreview.value || previewLoaded.value) {
-    return '已生成'
-  }
+  if (isGenerating.value) return '生成中'
+  if (previewReady.value || hasGeneratedPreview.value || previewLoaded.value) return '已生成'
   return '等待生成'
 })
+
+// =============================================================================
+// 7. Message Helpers
+// =============================================================================
 
 function createMessage(
   role: ChatMessage['role'],
@@ -167,10 +195,7 @@ function mapMessageRole(messageType?: string): ChatMessage['role'] {
 }
 
 function mapMessageStatus(messageStatus?: string): ChatMessage['status'] {
-  if (messageStatus === 'error') {
-    return 'error'
-  }
-  return 'done'
+  return messageStatus === 'error' ? 'error' : 'done'
 }
 
 function transformHistoryMessage(record: API.ChatHistoryVO): ChatMessage {
@@ -191,14 +216,11 @@ function mergeMessages(
     messages.value = nextMessages
     return
   }
-
   const seen = new Set<string>()
   const merged =
     mode === 'prepend' ? [...nextMessages, ...messages.value] : [...messages.value, ...nextMessages]
   messages.value = merged.filter((item) => {
-    if (seen.has(item.id)) {
-      return false
-    }
+    if (seen.has(item.id)) return false
     seen.add(item.id)
     return true
   })
@@ -207,63 +229,23 @@ function mergeMessages(
 function scrollToBottom() {
   window.requestAnimationFrame(() => {
     const container = messagesContainerRef.value
-    if (!container) {
-      return
-    }
+    if (!container) return
     container.scrollTop = container.scrollHeight
   })
 }
 
-function closeActiveEventSource() {
-  activeEventSource?.close()
-  activeEventSource = null
+function appendAssistantChunk(chunk: string) {
+  const lastMessage = messages.value.at(-1)
+  if (!lastMessage || lastMessage.role !== 'assistant') return
+  lastMessage.content += chunk
+  lastMessage.status = 'streaming'
+  messages.value = [...messages.value]
+  scrollToBottom()
 }
 
-function clearPreviewRefreshTimer() {
-  if (previewRefreshTimer !== null) {
-    window.clearTimeout(previewRefreshTimer)
-    previewRefreshTimer = null
-  }
-}
-
-async function isPreviewReachable() {
-  if (!previewBaseUrl.value) {
-    return false
-  }
-
-  try {
-    const response = await fetch(`${previewBaseUrl.value}?probe=${Date.now()}`, {
-      cache: 'no-store',
-      credentials: 'include',
-    })
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-async function refreshPreviewUntilAvailable(attempt = 0) {
-  clearPreviewRefreshTimer()
-
-  if (!previewReady.value || !previewBaseUrl.value) {
-    return
-  }
-
-  const reachable = await isPreviewReachable()
-  if (reachable) {
-    previewVersion.value = Date.now()
-    previewLoaded.value = true
-    return
-  }
-
-  if (attempt >= PREVIEW_REFRESH_LIMIT) {
-    return
-  }
-
-  previewRefreshTimer = window.setTimeout(() => {
-    void refreshPreviewUntilAvailable(attempt + 1)
-  }, PREVIEW_REFRESH_INTERVAL)
-}
+// =============================================================================
+// 8. Data Fetching
+// =============================================================================
 
 async function fetchAppDetail() {
   loading.value = true
@@ -273,16 +255,13 @@ async function fetchAppDetail() {
       message.error('应用 ID 无效')
       return
     }
-
     const response = isCurrentUserAdmin.value
       ? await getAppVoByIdByAdmin({ id })
       : await getAppVoById({ id })
-
     if (response.data.code === 0 && response.data.data) {
       app.value = response.data.data
       return
     }
-
     message.error(response.data.message || '获取应用详情失败')
   } finally {
     loading.value = false
@@ -291,13 +270,8 @@ async function fetchAppDetail() {
 
 async function fetchChatHistory(loadMore = false) {
   const currentAppId = appIdForApi.value
-  if (currentAppId === undefined) {
-    return
-  }
-
-  if (loadMore && (!historyHasMore.value || historyLoadMoreLoading.value)) {
-    return
-  }
+  if (currentAppId === undefined) return
+  if (loadMore && (!historyHasMore.value || historyLoadMoreLoading.value)) return
 
   const loadingRef = loadMore ? historyLoadMoreLoading : historyLoading
   loadingRef.value = true
@@ -312,12 +286,12 @@ async function fetchChatHistory(loadMore = false) {
       pageSize: CHAT_HISTORY_PAGE_SIZE,
       lastCreateTime: loadMore ? nextHistoryCursor.value : undefined,
     })
-
     if (response.data.code === 0 && response.data.data) {
       const pageData = response.data.data
-      const historyMessages = (pageData.records ?? []).map(transformHistoryMessage)
-
-      mergeMessages(historyMessages, loadMore ? 'prepend' : 'replace')
+      mergeMessages(
+        (pageData.records ?? []).map(transformHistoryMessage),
+        loadMore ? 'prepend' : 'replace',
+      )
       historyHasMore.value = Boolean(pageData.hasMore)
       nextHistoryCursor.value = pageData.nextLastCreateTime
 
@@ -329,7 +303,6 @@ async function fetchChatHistory(loadMore = false) {
       }
       return
     }
-
     message.error(response.data.message || '加载对话历史失败')
   } finally {
     loadingRef.value = false
@@ -345,80 +318,70 @@ async function maybeAutoSendInitialMessage() {
   ) {
     return
   }
-
   const autoPrompt = typeof route.query.autoPrompt === 'string' ? route.query.autoPrompt.trim() : ''
   const initialPrompt = autoPrompt || app.value?.initPrompt?.trim() || ''
   autoInitAttempted.value = true
-
-  if (!initialPrompt) {
-    return
-  }
-
+  if (!initialPrompt) return
   await sendMessage(initialPrompt)
-
   if (route.query.autoPrompt) {
     await router.replace({ path: route.path })
   }
 }
 
-function appendAssistantChunk(chunk: string) {
-  const lastMessage = messages.value.at(-1)
-  if (!lastMessage || lastMessage.role !== 'assistant') {
+// =============================================================================
+// 9. Preview Helpers
+// =============================================================================
+
+function clearPreviewRefreshTimer() {
+  if (previewRefreshTimer !== null) {
+    window.clearTimeout(previewRefreshTimer)
+    previewRefreshTimer = null
+  }
+}
+
+async function isPreviewReachable() {
+  if (!previewBaseUrl.value) return false
+  try {
+    const response = await fetch(`${previewBaseUrl.value}?probe=${Date.now()}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function refreshPreviewUntilAvailable(attempt = 0) {
+  clearPreviewRefreshTimer()
+  if (!previewReady.value || !previewBaseUrl.value) return
+
+  const reachable = await isPreviewReachable()
+  if (reachable) {
+    previewVersion.value = Date.now()
+    previewLoaded.value = true
     return
   }
+  if (attempt >= PREVIEW_REFRESH_LIMIT) return
 
-  lastMessage.content += chunk
-  lastMessage.status = 'streaming'
-  messages.value = [...messages.value]
-  scrollToBottom()
+  previewRefreshTimer = window.setTimeout(() => {
+    void refreshPreviewUntilAvailable(attempt + 1)
+  }, PREVIEW_REFRESH_INTERVAL)
 }
 
-function parseSsePayload(payload: string): string {
-  const normalizedPayload = payload.trim()
-  if (!normalizedPayload) {
-    return ''
-  }
+// =============================================================================
+// 10. Code Generation — SSE callbacks (called by the composable)
+// =============================================================================
 
-  if (normalizedPayload.includes('}{')) {
-    return normalizedPayload
-      .replace(/}\s*{/g, '}\n{')
-      .split('\n')
-      .map((item) => parseSsePayload(item))
-      .join('')
-  }
-
-  try {
-    const parsed = JSON.parse(normalizedPayload)
-    if (typeof parsed?.d === 'string') {
-      return parsed.d
-    }
-    if (typeof parsed?.data === 'string') {
-      return parsed.data
-    }
-    if (typeof parsed === 'string') {
-      return parsed
-    }
-  } catch {
-    const matchedChunks = Array.from(normalizedPayload.matchAll(/"d"\s*:\s*"((?:\\.|[^"\\])*)"/g))
-    if (matchedChunks.length) {
-      return matchedChunks.map(([, chunk]) => JSON.parse(`"${chunk}"`) as string).join('')
-    }
-    return normalizedPayload
-  }
-
-  return ''
-}
-
-async function finalizeGeneration(showSuccess = true) {
+/** Called when the generation stream completes successfully */
+async function handleGenerationDone(showSuccess: boolean) {
   const lastMessage = messages.value.at(-1)
   if (lastMessage?.role === 'assistant') {
     lastMessage.status = 'done'
     messages.value = [...messages.value]
   }
 
-  isGenerating.value = false
   previewReady.value = true
-  closeActiveEventSource()
 
   window.setTimeout(async () => {
     await fetchAppDetail()
@@ -431,20 +394,12 @@ async function finalizeGeneration(showSuccess = true) {
   }
 }
 
-function failGeneration(content = '生成中断，请稍后重试。') {
-  const lastMessage = messages.value.at(-1)
-  if (lastMessage?.role === 'assistant') {
-    lastMessage.status = 'error'
-    lastMessage.content = lastMessage.content || content
-    messages.value = [...messages.value]
-  }
-
-  isGenerating.value = false
-  clearPreviewRefreshTimer()
-  closeActiveEventSource()
-}
-
-async function recoverGenerationFromStreamClosure() {
+/**
+ * Called when the EventSource fires onerror with readyState !== CONNECTING.
+ * Attempts to recover by fetching the latest app detail & chat history.
+ * Returns true if content was recovered, false if the generation truly failed.
+ */
+async function handleStreamError(): Promise<boolean> {
   const lastMessage = messages.value.at(-1)
   const hasAssistantContent =
     lastMessage?.role === 'assistant' && lastMessage.content.trim().length > 0
@@ -459,82 +414,47 @@ async function recoverGenerationFromStreamClosure() {
   return hasGeneratedContent(app.value) || Boolean(hasAssistantContent)
 }
 
-function startSseGeneration(content: string) {
-  const currentAppId = normalizeId(app.value?.id)
-  if (!currentAppId) {
-    return
+/**
+ * Called when the backend sends a business-error SSE event
+ * (e.g. rate-limit, validation failure).
+ */
+function handleBusinessError(_code: number, errorMessage: string) {
+  const lastMessage = messages.value.at(-1)
+  if (lastMessage?.role === 'assistant') {
+    lastMessage.content = `❌ ${errorMessage}`
+    lastMessage.status = 'error'
+    messages.value = [...messages.value]
   }
-
-  const url = new URL(`${API_BASE_URL}/app/chat/gen/code`, window.location.origin)
-  url.searchParams.set('appId', currentAppId)
-  url.searchParams.set('message', content)
-
-  closeActiveEventSource()
-  activeEventSource = new EventSource(url.toString(), {
-    withCredentials: true,
-  })
-
-  let streamCompleted = false
-
-  activeEventSource.onmessage = (event) => {
-    if (streamCompleted) {
-      return
-    }
-
-    const chunk = parseSsePayload(event.data)
-    if (chunk) {
-      appendAssistantChunk(chunk)
-    }
-  }
-
-  activeEventSource.addEventListener('done', async () => {
-    if (streamCompleted) {
-      return
-    }
-
-    streamCompleted = true
-    await finalizeGeneration(true)
-  })
-
-  activeEventSource.onerror = async () => {
-    if (streamCompleted) {
-      return
-    }
-
-    if (activeEventSource?.readyState === EventSource.CONNECTING) {
-      streamCompleted = true
-      await finalizeGeneration(true)
-      return
-    }
-
-    const recovered = await recoverGenerationFromStreamClosure()
-    if (recovered) {
-      streamCompleted = true
-      await finalizeGeneration(false)
-      return
-    }
-
-    streamCompleted = true
-    failGeneration()
-    message.error('生成失败')
-  }
+  clearPreviewRefreshTimer()
+  message.error(errorMessage || '生成过程中出现错误')
 }
+
+/** Called when the SSE connection fails and recovery was not possible. */
+function handleFatalError(content: string) {
+  const lastMessage = messages.value.at(-1)
+  if (lastMessage?.role === 'assistant') {
+    lastMessage.status = 'error'
+    lastMessage.content = lastMessage.content || content
+    messages.value = [...messages.value]
+  }
+  clearPreviewRefreshTimer()
+  message.error('生成失败')
+}
+
+// =============================================================================
+// 11. Send Message (wires up composable)
+// =============================================================================
 
 async function sendMessage(content: string) {
   const trimmedContent = content.trim()
-  if (!hasValidId(app.value?.id) || !trimmedContent) {
-    return
-  }
+  if (!hasValidId(app.value?.id) || !trimmedContent) return
   if (!canEditCurrentApp.value) {
     message.warning(READONLY_CHAT_TOOLTIP)
     return
   }
-  if (isGenerating.value) {
-    return
-  }
+  if (isGenerating.value) return
 
   draftMessage.value = ''
-  isGenerating.value = true
   previewReady.value = false
   previewLoaded.value = false
   clearPreviewRefreshTimer()
@@ -552,10 +472,22 @@ async function sendMessage(content: string) {
   mergeMessages([userMessage, assistantMessage], 'append')
   scrollToBottom()
 
+  const currentAppId = normalizeId(app.value?.id)
+  if (!currentAppId) {
+    abortCodeGen()
+    return
+  }
+
   try {
-    startSseGeneration(finalContent)
+    startCodeGen(currentAppId, finalContent, {
+      onChunk: appendAssistantChunk,
+      onDone: handleGenerationDone,
+      onStreamError: handleStreamError,
+      onBusinessError: handleBusinessError,
+      onFatalError: handleFatalError,
+    })
   } catch (error) {
-    failGeneration()
+    abortCodeGen()
     message.error((error as Error).message || '生成失败')
   }
 }
@@ -564,15 +496,21 @@ async function handleSend() {
   await sendMessage(draftMessage.value)
 }
 
+// =============================================================================
+// 12. Chat History
+// =============================================================================
+
 async function handleLoadMoreHistory() {
   await fetchChatHistory(true)
 }
 
+// =============================================================================
+// 13. Deploy
+// =============================================================================
+
 async function handleDeployConfirm() {
   const currentAppId = normalizeId(app.value?.id)
-  if (!currentAppId) {
-    return
-  }
+  if (!currentAppId) return
   if (!canEditCurrentApp.value) {
     message.warning('当前应用仅支持查看，不能部署。')
     return
@@ -612,9 +550,7 @@ function openWorkInNewTab() {
 }
 
 async function copyDeployLink() {
-  if (!deployWorkUrl.value) {
-    return
-  }
+  if (!deployWorkUrl.value) return
   try {
     await navigator.clipboard.writeText(deployWorkUrl.value)
     message.success('链接已复制')
@@ -623,37 +559,39 @@ async function copyDeployLink() {
   }
 }
 
+// =============================================================================
+// 14. App Detail Modal Actions
+// =============================================================================
+
 function openEditPage() {
-  if (!app.value?.id) {
-    return
-  }
+  if (!app.value?.id) return
   detailModalOpen.value = false
   router.push(`/app/edit/${app.value.id}`)
 }
 
 async function handleDeleteApp() {
-  if (!app.value?.id || !canManageCurrentApp.value) {
-    return
-  }
+  if (!app.value?.id || !canManageCurrentApp.value) return
 
   isDeleting.value = true
   try {
     const response = isCurrentUserAdmin.value
       ? await deleteAppByAdmin({ id: app.value.id })
       : await deleteMyApp({ id: app.value.id })
-
     if (response.data.code === 0) {
       detailModalOpen.value = false
       message.success('应用已删除')
       await router.push('/')
       return
     }
-
     message.error(response.data.message || '删除应用失败')
   } finally {
     isDeleting.value = false
   }
 }
+
+// =============================================================================
+// 15. Preview Iframe
+// =============================================================================
 
 function handlePreviewLoad() {
   previewLoaded.value = true
@@ -662,7 +600,9 @@ function handlePreviewLoad() {
   }
 }
 
-// --- 可视化编辑 ---
+// =============================================================================
+// 16. Visual Editor
+// =============================================================================
 
 function tryInjectVisualEditor() {
   if (!iframeRef.value || !isEditMode.value) return
@@ -704,11 +644,11 @@ function exitEditMode() {
   isEditMode.value = false
 }
 
-// 下载相关
-const downloading = ref(false)
+// =============================================================================
+// 17. Download Code
+// =============================================================================
 
-// 下载代码
-const downloadCode = async () => {
+async function downloadCode() {
   if (!appId.value) {
     message.error('应用ID不存在')
     return
@@ -716,14 +656,10 @@ const downloadCode = async () => {
   downloading.value = true
   try {
     const url = `${API_BASE_URL}/app/download/${appId.value}`
-    const response = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const response = await fetch(url, { method: 'GET', credentials: 'include' })
     if (!response.ok) {
       throw new Error(`下载失败: ${response.status}`)
     }
-    // 校验响应是否为 ZIP 文件，防止后端返回 JSON 错误时被当作 ZIP 保存
     const contentType = response.headers.get('Content-Type') || ''
     if (!contentType.includes('application/zip')) {
       const text = await response.text()
@@ -731,16 +667,14 @@ const downloadCode = async () => {
       try {
         const json = JSON.parse(text)
         errorMsg = json.message || errorMsg
-      } catch (_) {
-        // not JSON, use text
+      } catch {
         if (text) errorMsg = text
       }
       throw new Error(errorMsg)
     }
-    // 获取文件名
     const contentDisposition = response.headers.get('Content-Disposition')
-    const fileName = contentDisposition?.match(/filename="(.+)"/)?.[1] || `app-${appId.value}.zip`
-    // 下载文件
+    const fileName =
+      contentDisposition?.match(/filename="(.+)"/)?.[1] || `app-${appId.value}.zip`
     const blob = await response.blob()
     if (blob.size === 0) {
       throw new Error('下载的文件为空')
@@ -750,7 +684,6 @@ const downloadCode = async () => {
     link.href = downloadUrl
     link.download = fileName
     link.click()
-    // 清理
     URL.revokeObjectURL(downloadUrl)
     message.success('代码下载成功')
   } catch (error) {
@@ -760,6 +693,10 @@ const downloadCode = async () => {
     downloading.value = false
   }
 }
+
+// =============================================================================
+// 18. Watchers
+// =============================================================================
 
 watch(isEditMode, (val) => {
   if (val) {
@@ -786,6 +723,10 @@ watch([() => previewBaseUrl.value, () => hasGeneratedPreview.value], ([baseUrl, 
   }
 })
 
+// =============================================================================
+// 19. Lifecycle
+// =============================================================================
+
 onMounted(async () => {
   await fetchAppDetail()
   await fetchChatHistory()
@@ -794,7 +735,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearPreviewRefreshTimer()
-  closeActiveEventSource()
+  // EventSource cleanup is handled by the composable's own onBeforeUnmount
   if (visualEditorMsgHandler) {
     window.removeEventListener('message', visualEditorMsgHandler)
     visualEditorMsgHandler = null
