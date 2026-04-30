@@ -3,7 +3,6 @@ package com.bvz.aicodegenerator.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
-import com.bvz.aicodegenerator.ai.AiCodeGenTypeRoutingService;
 import com.bvz.aicodegenerator.annotation.AuthCheck;
 import com.bvz.aicodegenerator.common.BaseResponse;
 import com.bvz.aicodegenerator.common.DeleteRequest;
@@ -16,7 +15,6 @@ import com.bvz.aicodegenerator.exception.ThrowUtils;
 import com.bvz.aicodegenerator.model.dto.app.*;
 import com.bvz.aicodegenerator.model.entity.App;
 import com.bvz.aicodegenerator.model.entity.User;
-import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
 import com.bvz.aicodegenerator.model.vo.AppVO;
 import com.bvz.aicodegenerator.service.AppService;
 import com.bvz.aicodegenerator.service.ProjectDownloadService;
@@ -26,6 +24,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -269,6 +268,11 @@ public class AppController {
      * @return 精选应用列表
      */
     @PostMapping("/good/list/page/vo")
+    @Cacheable(
+            value = "good_app_page",
+            key = "T(com.bvz.aicodegenerator.utils.CacheKeyUtils).generateKey(#appQueryRequest)",
+            condition = "#appQueryRequest.pageNum <= 10"
+    )
     public BaseResponse<Page<AppVO>> listGoodAppVOByPage(@RequestBody AppQueryRequest appQueryRequest) {
         ThrowUtils.throwIf(appQueryRequest == null, ErrorCode.PARAMS_ERROR);
         // 限制每页最多 20 个
