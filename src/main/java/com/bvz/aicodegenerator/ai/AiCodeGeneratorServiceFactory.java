@@ -1,6 +1,7 @@
 package com.bvz.aicodegenerator.ai;
 
-import com.bvz.aicodegenerator.ai.tools.*;
+import com.bvz.aicodegenerator.ai.guardrail.PromptSafetyInputGuardrail;
+import com.bvz.aicodegenerator.ai.tools.ToolManager;
 import com.bvz.aicodegenerator.exception.BusinessException;
 import com.bvz.aicodegenerator.exception.ErrorCode;
 import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
@@ -98,6 +99,8 @@ public class AiCodeGeneratorServiceFactory {
                                     "工具执行失败：" + toolName + "，原因：" + error.getMessage()
                             );
                         })
+                        .inputGuardrails(new PromptSafetyInputGuardrail()) // 添加输入护轨
+//                        .outputGuardrails(new RetryOutputGuardrail()) // 添加输出护轨，为了保留流式输出，不使用
                         .build();
             }
             case HTML, MULTI_FILE -> {
@@ -107,6 +110,8 @@ public class AiCodeGeneratorServiceFactory {
                         .chatModel(chatModel)
                         .streamingChatModel(openAiStreamingChatModel)
                         .chatMemory(chatMemory)
+                        .inputGuardrails(new PromptSafetyInputGuardrail())
+//                        .outputGuardrails(new RetryOutputGuardrail())
                         .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR,
