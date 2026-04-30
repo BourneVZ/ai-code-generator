@@ -7,6 +7,8 @@ import com.bvz.aicodegenerator.ai.AiCodeGeneratorServiceFactory;
 import com.bvz.aicodegenerator.ai.model.message.AiResponseMessage;
 import com.bvz.aicodegenerator.ai.model.message.ToolExecutedMessage;
 import com.bvz.aicodegenerator.ai.model.message.ToolRequestMessage;
+import com.bvz.aicodegenerator.constant.AppConstant;
+import com.bvz.aicodegenerator.core.builder.VueProjectBuilder;
 import com.bvz.aicodegenerator.core.parser.CodeParserExecutor;
 import com.bvz.aicodegenerator.core.saver.CodeFileSaverExecutor;
 import com.bvz.aicodegenerator.exception.BusinessException;
@@ -38,6 +40,8 @@ public class AiCodeGeneratorFacade {
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
+    @Resource
+    private VueProjectBuilder vueProjectBuilder;
 
     /**
      * 统一入口：根据类型生成并保存代码
@@ -93,7 +97,7 @@ public class AiCodeGeneratorFacade {
             }
             case VUE_PROJECT -> {
                 TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
-                yield processTokenStream(tokenStream);
+                yield processTokenStream(tokenStream, appId);
             }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
@@ -108,7 +112,7 @@ public class AiCodeGeneratorFacade {
      * @param tokenStream TokenStream 对象
      * @return Flux<String> 流式响应
      */
-    private Flux<String> processTokenStream(TokenStream tokenStream) {
+    private Flux<String> processTokenStream(TokenStream tokenStream, Long appId) {
         return Flux.create(sink -> {
             AtomicBoolean terminalSignalSent = new AtomicBoolean(false);
             tokenStream.onPartialResponse((String partialResponse) -> {
@@ -124,12 +128,12 @@ public class AiCodeGeneratorFacade {
                         sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
                     })
                     .onCompleteResponse((ChatResponse response) -> {
-                        completeSinkSafely(sink, terminalSignalSent);
+                        completeSinkSafely(sink, terminalSignalSent, appId);
                     })
                     .onError((Throwable error) -> {
                         if (isBenignStreamClosed(error)) {
-                            log.warn("Streaming response closed after output completed, treating as complete. message={}", error.getMessage());
-                            completeSinkSafely(sink, terminalSignalSent);
+                            log.warn("流式响应，在输出完成后关闭, 视为完成. message={}", error.getMessage());
+                            completeSinkSafely(sink, terminalSignalSent, appId);
                             return;
                         }
                         log.error("Streaming response failed", error);
@@ -139,8 +143,11 @@ public class AiCodeGeneratorFacade {
         });
     }
 
-    private void completeSinkSafely(FluxSink<String> sink, AtomicBoolean terminalSignalSent) {
+    private void completeSinkSafely(FluxSink<String> sink, AtomicBoolean terminalSignalSent, Long appId) {
         if (terminalSignalSent.compareAndSet(false, true)) {
+            // 执行 Vue 项目构建（同步执行，确保预览时项目已就绪）
+            String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appId;
+            vueProjectBuilder.buildProject(projectPath);
             sink.complete();
         }
     }
