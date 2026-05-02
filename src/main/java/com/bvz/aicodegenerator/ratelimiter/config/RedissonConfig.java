@@ -20,6 +20,9 @@ public class RedissonConfig {
     @Value("${spring.data.redis.database}")
     private Integer redisDatabase;
 
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
     @Bean
     public RedissonClient redissonClient() {
         Config config = new Config();
@@ -34,6 +37,10 @@ public class RedissonConfig {
                 .setTimeout(3000)
                 .setRetryAttempts(3)
                 .setRetryInterval(1500);
+
+        if (redisPassword != null && !redisPassword.isBlank()) {
+            singleServerConfig.setPassword(redisPassword);
+        }
 
         return Redisson.create(config);
     }

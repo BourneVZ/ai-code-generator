@@ -1,6 +1,6 @@
 ### CUSTOM ###
-src/main/java/com/bvz/aicodegenerator/genresult
-src/main/resources/application-local.yml
+application-local.yml
+application-prod.yml
 tmp
 .claude
 CLAUDE.md
