@@ -83,21 +83,7 @@ export function hasGeneratedContent(
     return false
   }
 
-  // 直接使用后端标记的 hasGeneratedPreview 字段
-  if (app?.hasGeneratedPreview === 1) {
-    return true
-  }
-
-  // 兼容旧逻辑：如果有部署信息或截图，也认为已生成
-  if (trimUrlSegment(app?.deployKey)) {
-    return true
-  }
-
-  if (app?.cover?.trim() || app?.deployedTime?.trim()) {
-    return true
-  }
-
-  return false
+  return app?.hasGeneratedPreview === 1
 }
 
 export function buildAppName(prompt: string) {

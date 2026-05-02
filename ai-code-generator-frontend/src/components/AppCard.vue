@@ -9,7 +9,6 @@ import {
   getAppDeployUrl,
   getAppName,
   getAppOwnerName,
-  getAppPreviewUrl,
   hasGeneratedContent,
 } from '@/utils/app'
 
@@ -33,7 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const imageCover = computed(() => props.app.cover?.trim() || '')
-const previewUrl = computed(() => (hasGeneratedContent(props.app) ? getAppPreviewUrl(props.app) : ''))
+const hasContent = computed(() => hasGeneratedContent(props.app))
 const deployUrl = computed(() => getAppDeployUrl(props.app))
 const hasDeployWork = computed(() => Boolean(deployUrl.value))
 const isFeatured = computed(() => (props.app.priority ?? 0) >= FEATURED_PRIORITY)
@@ -57,7 +56,10 @@ const deleteApp = (event: MouseEvent) => {
   <article class="app-card" @click="openApp">
     <div class="app-card__preview">
       <img v-if="imageCover" :src="imageCover" :alt="getAppName(app)" class="app-card__image" />
-      <iframe v-else-if="previewUrl" :src="previewUrl" class="app-card__iframe" loading="lazy" title="应用预览" />
+      <div v-else-if="hasContent" class="app-card__placeholder app-card__placeholder--generated">
+        <img src="@/assets/logo.png" alt="placeholder" class="app-card__placeholder-logo" />
+        <span>点击查看生成内容</span>
+      </div>
       <div v-else class="app-card__placeholder">
         <img src="@/assets/logo.png" alt="placeholder" class="app-card__placeholder-logo" />
         <span>等待生成预览内容</span>

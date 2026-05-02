@@ -66,8 +66,8 @@ type ChatMessage = {
 
 const READONLY_CHAT_TOOLTIP = '无法在别人的作品下继续对话哦'
 const CHAT_HISTORY_PAGE_SIZE = 10
-const PREVIEW_REFRESH_INTERVAL = 2000
-const PREVIEW_REFRESH_LIMIT = 60
+const PREVIEW_REFRESH_BASE_INTERVAL = 1000
+const PREVIEW_REFRESH_LIMIT = 8
 
 // =============================================================================
 // 3. Route & Stores
@@ -105,6 +105,7 @@ const nextHistoryCursor = ref<string>()
 const previewVersion = ref(Date.now())
 const previewReady = ref(false)
 const previewLoaded = ref(false)
+const previewLoadError = ref(false)
 let previewRefreshTimer: number | null = null
 
 // -- Deploy
@@ -362,11 +363,15 @@ async function refreshPreviewUntilAvailable(attempt = 0) {
     previewLoaded.value = true
     return
   }
-  if (attempt >= PREVIEW_REFRESH_LIMIT) return
+  if (attempt >= PREVIEW_REFRESH_LIMIT) {
+    previewReady.value = false
+    return
+  }
 
+  const delay = Math.min(PREVIEW_REFRESH_BASE_INTERVAL * 2 ** attempt, 30000)
   previewRefreshTimer = window.setTimeout(() => {
     void refreshPreviewUntilAvailable(attempt + 1)
-  }, PREVIEW_REFRESH_INTERVAL)
+  }, delay)
 }
 
 // =============================================================================
@@ -382,6 +387,7 @@ async function handleGenerationDone(showSuccess: boolean) {
   }
 
   previewReady.value = true
+  previewLoadError.value = false
 
   window.setTimeout(async () => {
     await fetchAppDetail()
@@ -595,9 +601,16 @@ async function handleDeleteApp() {
 
 function handlePreviewLoad() {
   previewLoaded.value = true
+  previewLoadError.value = false
   if (isEditMode.value) {
     tryInjectVisualEditor()
   }
+}
+
+function handlePreviewError() {
+  previewLoadError.value = true
+  previewLoaded.value = false
+  clearPreviewRefreshTimer()
 }
 
 // =============================================================================
@@ -719,6 +732,7 @@ watch([() => previewBaseUrl.value, () => hasGeneratedPreview.value], ([baseUrl, 
   if (baseUrl && generated) {
     previewVersion.value = Date.now()
     previewLoaded.value = true
+    previewLoadError.value = false
     clearPreviewRefreshTimer()
   }
 })
@@ -950,13 +964,20 @@ onBeforeUnmount(() => {
 
         <div class="preview-panel__body">
           <iframe
-            v-if="previewUrl"
+            v-if="previewUrl && !previewLoadError"
             ref="iframeRef"
             :src="previewUrl"
             class="preview-panel__iframe"
             title="网页预览"
             @load="handlePreviewLoad"
+            @error="handlePreviewError"
           />
+          <div
+            v-else-if="previewLoadError"
+            class="preview-panel__placeholder preview-panel__placeholder--error"
+          >
+            <p>预览加载失败，请确认文件已生成</p>
+          </div>
           <div
             v-else-if="isGenerating || shouldShowPreview"
             class="preview-panel__placeholder preview-panel__placeholder--loading"

@@ -169,29 +169,14 @@ watch(
 )
 
 onMounted(async () => {
+  // 阻止浏览器自动恢复滚动位置，交由 Vue Router scrollBehavior 控制
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual'
+  }
+
   loadFeaturedApps()
   await nextTick()
-
-  // Temporarily disable smooth scrolling so our corrections are instant
-  const html = document.documentElement
-  const prevBehavior = html.style.scrollBehavior
-  html.style.scrollBehavior = 'auto'
   window.scrollTo(0, 0)
-
-  // Guard against unexpected scrolls during initial layout / data load
-  let guardActive = true
-  const scrollGuard = () => {
-    if (guardActive && window.scrollY > 0) {
-      window.scrollTo(0, 0)
-    }
-  }
-  window.addEventListener('scroll', scrollGuard, { passive: true })
-
-  setTimeout(() => {
-    guardActive = false
-    window.removeEventListener('scroll', scrollGuard)
-    html.style.scrollBehavior = prevBehavior || ''
-  }, 1500)
 })
 </script>
 
