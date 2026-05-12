@@ -24,6 +24,8 @@ import com.bvz.aicodegenerator.model.entity.User;
 import com.bvz.aicodegenerator.model.enums.CodeGenTypeEnum;
 import com.bvz.aicodegenerator.model.vo.AppVO;
 import com.bvz.aicodegenerator.model.vo.UserVO;
+import com.bvz.aicodegenerator.monitor.MonitorContext;
+import com.bvz.aicodegenerator.monitor.MonitorContextHolder;
 import com.bvz.aicodegenerator.service.AppService;
 import com.bvz.aicodegenerator.service.ChatHistoryService;
 import com.bvz.aicodegenerator.service.ScreenshotService;
@@ -100,15 +102,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 5. 先保存用户消息，再开始调用 AI，确保对话过程完整可追溯
         chatHistoryService.saveUserMessage(appId, loginUser.getId(), message);
 
-        // 6. 调用 AI 生成代码（流式）
+        // 6. 设置监控上下文
+        MonitorContextHolder.setContext(
+                MonitorContext.builder()
+                        .userId(loginUser.getId().toString())
+                        .appId(appId.toString())
+                        .build()
+        );
+
+        // 7. 调用 AI 生成代码（流式）
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
 
-        // 7. 收集 AI 响应内容并在完成后记录到对话历史
+        // 8. 收集 AI 响应内容并在完成后记录到对话历史
         Flux<String> resultFlux = streamHandlerExecutor
                 .doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
                 .onErrorResume(error -> Flux.just(buildStreamErrorMessage(codeGenTypeEnum, error)));
 
-        // 8. 在流完成后更新 hasGeneratedPreview 标记
+        // 9. 在流完成后更新 hasGeneratedPreview 标记
         return resultFlux
                 .doOnComplete(() -> {
                     try {
@@ -120,6 +130,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                     } catch (Exception e) {
                         log.error("更新 hasGeneratedPreview 标记失败, appId={}", appId, e);
                     }
+                })
+                .doFinally(signalType -> {
+                    // 流结束时清理（无论成功/失败/取消）
+                    MonitorContextHolder.clearContext();
                 });
     }
 
